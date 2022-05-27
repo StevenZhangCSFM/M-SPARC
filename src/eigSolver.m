@@ -30,7 +30,8 @@ if S.parallel ~= 1
 		else
 			kpt = ks - S.tnkpt;
 			spin = 2;
-		end
+        end
+        S.spinFlag = spin; % to be used in h_nonlocal_vectro_mult, to decide which col of VxcScan3 will be used
 		% Heff = spdiags(S.Veff(:,spin),0,S.N,S.N);
 		Heff = S.Veff(:,spin);
         rng('default'); % Initialize random number generator

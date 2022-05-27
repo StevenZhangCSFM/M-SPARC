@@ -22,7 +22,11 @@ Hnlx = -0.5*(lapVec(DL11,DL22,DL33,DG1,DG2,DG3,X,S)) + bsxfun(@times,Veff,X);
 
 % if (S.xc == 4) && (S.countSCF > 0) % metaGGA, set a flag to seperate it from the 1st PBE SCF computation
 if (S.xc == 4) && (S.countPotential > 0) % metaGGA, set a flag to seperate it from the 1st PBE SCF computation
-    VxcScan3 = S.VxcScan3;
+    if S.nspin == 1
+        VxcScan3 = S.VxcScan3;
+    else % spin polarization mGSGA
+        VxcScan3 = S.VxcScan3(:, S.spinFlag); % S.spinFlag is defined in eigSolver.m
+    end
     
     if S.cell_typ == 2 % unorthogonal cell
         lapc_T = [S.lapc_T(1,1), S.lapc_T(2,1), S.lapc_T(3,1);
