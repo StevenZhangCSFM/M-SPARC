@@ -183,7 +183,7 @@ function [ec, Vc1, Vc2, Vc3] = correlationSCAN(rho, s, alpha, DsDn, DsDDn, Dalph
     Dw0Dn = (w0 + 1) .* (-DecLDA0Dn/b1c);
     DH0Dn = b1c*(Dw0Dn.*(1 - gInf0s) - w0.*DgInf0sDn) ./ (1 + w0.*(1 - gInf0s));
     DH0DDn = b1c* (-w0.*DgInf0sDDn) ./ (1 + w0.*(1 - gInf0s));
-    Dec0Dn = (DecLDA0Dn + DH0Dn).*Gc + (ec0 + H0).*DGcDn;
+    Dec0Dn = (DecLDA0Dn + DH0Dn).*Gc + (ecLDA0 + H0).*DGcDn;
     Dec0DDn = DH0DDn.*Gc;
     %% compute variation of epsilon_c^1
     Dec_lsda1Dn = - (rs./rho/3).*(-2*AA*alpha1*log(1+1./(2*AA*( beta1*sqr_rs + beta2*rs + beta3*(rs.^1.5) + beta4*(rs.^(p+1))))) ...

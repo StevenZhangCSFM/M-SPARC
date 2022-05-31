@@ -772,9 +772,9 @@ if (S.vdWDFFlag == 1) || (S.vdWDFFlag == 2) % 1: temporary flag of vdW-DF1 2: vd
     end
 end
 
-if (S.xc == 4) && (S.nspin ~= 1)
-	error('Currently SCAN does not support spin polarization!');
-end
+% if (S.xc == 4) && (S.nspin ~= 1)
+% 	error('Currently SCAN does not support spin polarization!');
+% end
 
 fprintf(' Done. (%.3f sec)\n', toc(t1));
 
