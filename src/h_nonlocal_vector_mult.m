@@ -1,4 +1,4 @@
-function  Hnlx = h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Veff,X,S,kptvec)
+function  Hnlx = h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Veff,X,S,kptvec,varargin)
 % @brief   Calculates Hamiltonian vector product, where Vnl is the nonlocal
 %          pseudopotential to be determined using the info stored in S.
 %
@@ -21,11 +21,14 @@ function  Hnlx = h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Veff,X,S,kptv
 Hnlx = -0.5*(lapVec(DL11,DL22,DL33,DG1,DG2,DG3,X,S)) + bsxfun(@times,Veff,X);
 
 % if (S.xc == 4) && (S.countSCF > 0) % metaGGA, set a flag to seperate it from the 1st PBE SCF computation
+if nargin == 11
+    spinFlag = varargin{1};
+end
 if (S.xc == 4) && (S.countPotential > 0) % metaGGA, set a flag to seperate it from the 1st PBE SCF computation
     if S.nspin == 1
         VxcScan3 = S.VxcScan3;
     else % spin polarization mGSGA
-        VxcScan3 = S.VxcScan3(:, S.spinFlag); % S.spinFlag is defined in eigSolver.m
+        VxcScan3 = S.VxcScan3(:, spinFlag); % S.spinFlag is defined in eigSolver.m
     end
     
     if S.cell_typ == 2 % unorthogonal cell
