@@ -18,7 +18,7 @@ fprintf('\n Starting pseudocharge generation and self energy calculation...\n');
 S.b = zeros(S.N,1);
 S.b_ref = zeros(S.N,1);
 S.rho_at = zeros(S.N,1);
-if S.nspin == 2
+if S.nspden == 2
 	rho_at_up = zeros(S.N,1);
 	rho_at_dn = zeros(S.N,1);
 end
@@ -147,7 +147,7 @@ for JJ_a = 1:S.n_atm % loop over all the atoms
 		S.b_ref(Rowcount_rb) = S.b_ref(Rowcount_rb) + reshape(bJ_ref(II,JJ,KK),sz);
 		rho_add = reshape(rho_isolated_atom(II,JJ,KK),sz);
 		S.rho_at(Rowcount_rb) = S.rho_at(Rowcount_rb) + rho_add;
-		if(S.nspin == 2)
+		if S.nspden == 2
 			rho_at_up(Rowcount_rb) = rho_at_up(Rowcount_rb) + (S.Atm(count_typ).Z + S.Atm(count_typ).mag(count_typ_atms))/(2 * S.Atm(count_typ).Z) * rho_add;
 			rho_at_dn(Rowcount_rb) = rho_at_dn(Rowcount_rb) + (S.Atm(count_typ).Z - S.Atm(count_typ).mag(count_typ_atms))/(2 * S.Atm(count_typ).Z) * rho_add;
 		end
@@ -190,7 +190,7 @@ fprintf(' Integration b_ref = %.12f\n\n',abs(dot(S.W,S.b_ref)));
 %*                    Designate rho_at                       *
 %*************************************************************
 % Guess for electron density
-if S.nspin == 2
+if S.nspden == 2
 	S.rho_at = horzcat(S.rho_at,rho_at_up,rho_at_dn);
 end
 
@@ -199,7 +199,7 @@ end
 rho_scal = abs(S.NegCharge/dot(S.W,S.rho_at(:,1)));
 S.rho_at = rho_scal*S.rho_at;
 
-if S.nspin == 2
+if S.nspden == 2
 	netM = dot(S.W,S.rho_at(:,2)) - dot(S.W,S.rho_at(:,3));
 	fprintf('======================================\n');
 	fprintf(' Net initial magnetization is: % .15f \n', netM);

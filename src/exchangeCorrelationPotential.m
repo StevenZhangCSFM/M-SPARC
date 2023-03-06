@@ -57,7 +57,7 @@ XC.sq_rsfac = sqrt(XC.rsfac);
 XC.sq_rsfac_inv = 1.0/XC.sq_rsfac;
 
 
-if S.nspin == 1
+if S.spin_typ == 0
 	if S.xc == 0
 		S = LDA_PW(S);
 	elseif S.xc == 1
@@ -78,8 +78,8 @@ if S.nspin == 1
             return;
         end
 	end
-else
-	if S.xc == 0
+elseif S.spin_typ == 1
+    if S.xc == 0
 		S = LSDA_PW(S,XC);
 	elseif S.xc == 1
 		S = LSDA_PZ(S,XC);
@@ -98,7 +98,9 @@ else
             S.dvxcdgrho = 0.0.*S.dvxcdgrho;
             return;
         end
-	end
+    end
+elseif S.spin_typ == 2
+    error("Not implemented yet!\n");
 end
 
 end

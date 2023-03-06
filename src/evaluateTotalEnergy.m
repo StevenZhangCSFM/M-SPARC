@@ -25,7 +25,7 @@ rho = S.rho;
 INDX_zerorho = (rho < S.xc_rhotol);
 rho(INDX_zerorho) = S.xc_rhotol;
 
-if S.nspin == 1
+if S.spin_typ == 0
 	if S.xc == 0 % LDA_PW
 		C2 = 0.73855876638202 ; % constant for exchange energy
 		%rho = rho+(1e-50) ; % to avoid divide by zero error
@@ -74,7 +74,7 @@ if S.nspin == 1
         Eext_scan_dc = sum(S.VxcScan3.*S.tau.*S.W);
         Exc_dc = Exc_dc + Eext_scan_dc;
     end
-else
+elseif S.spin_typ == 1
 	Exc = sum(S.e_xc.*(rho(:,1)+S.rho_Tilde_at).*S.W);
 	% Exchange-correlation energy double counting correction
 	Exc_dc = sum(sum(S.Vxc.*rho(:,2:3),2).*S.W) ;
@@ -85,6 +85,8 @@ else
         Eext_scan_dc = sum(sum(S.VxcScan3.*S.tau(:, 2:3).*S.W));
         Exc_dc = Exc_dc + Eext_scan_dc;
     end
+elseif S.spin_typ == 2
+    error("Not implemented yet!");
 end
 
 % Electrostatic energy double counting correction

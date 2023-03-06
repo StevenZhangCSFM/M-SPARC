@@ -16,12 +16,12 @@ fileID = fopen(outfname,'a');
 if (fileID == -1) 
 	error('\n Cannot open file "%s"\n',outfname);
 end
-if(S.nspin == 1)
+if S.spin_typ == 0
 	fprintf(fileID,'=====================================================================\n');
 	fprintf(fileID,'                    Self Consistent Field (SCF#%d)                     \n',S.Relax_iter);
 	fprintf(fileID,'=====================================================================\n');
 	fprintf(fileID,'Iteration     Free Energy (Ha/atom)   SCF Error        Timing (sec)\n');
-else
+elseif S.spin_typ == 1
 	fprintf(fileID,'========================================================================================\n');
 	fprintf(fileID,'                            Self Consistent Field (SCF#%d)                     \n',S.Relax_iter);
 	fprintf(fileID,'========================================================================================\n');
@@ -40,11 +40,12 @@ S = exchangeCorrelationPotential(S);
 S.Veff = real(bsxfun(@plus,S.phi,S.Vxc));
 
 % Initialize the mixing history vectors
-S.X = zeros(S.N*S.nspin,S.MixingHistory);
-S.F = zeros(S.N*S.nspin,S.MixingHistory);
-S.mixing_hist_fkm1 = zeros(S.N*S.nspin,1);
+% TODO: change it for non-collinear
+S.X = zeros(S.N*S.nspden,S.MixingHistory);
+S.F = zeros(S.N*S.nspden,S.MixingHistory);
+S.mixing_hist_fkm1 = zeros(S.N*S.nspden,1);
 
-if S.nspin == 1
+if S.spin_typ == 0
 	if S.MixingVariable == 0
 		S.mixing_hist_xkm1 = S.rho;		
 	else
@@ -56,7 +57,7 @@ if S.nspin == 1
 		end
 		S.mixing_hist_xkm1 = S.Veff - Veff_mean;		
 	end
-else
+elseif S.spin_typ == 1
 	if S.MixingVariable == 0
 		RHO_temp = vertcat(S.rho(:,2),S.rho(:,3));
 		S.mixing_hist_xkm1 = RHO_temp;		
@@ -272,9 +273,9 @@ while count_SCF <= S.MAXIT_SCF
         % Calculate energy
         [S.Etotal,S.Eband,S.Exc,S.Exc_dc,S.Eelec_dc,S.Eent] = evaluateTotalEnergy(S);
         % Calculate Self Consistency Correction to energy
-        if S.nspin == 1
+        if S.spin_typ == 0
             S.Escc = sum((S.Veff-Veff_temp) .* S.rho .* S.W);
-        else
+        elseif S.spin_typ == 1
             S.Escc = sum(sum((S.Veff-Veff_temp) .* S.rho(:,2:3),2) .* S.W);
         end
         fprintf(' Escc = %.8f\n', S.Escc);
@@ -297,13 +298,13 @@ while count_SCF <= S.MAXIT_SCF
     %%%%%%%%%%%%%%%%%%%%%%%%%   debug info %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     % Error in SCF fixed-point iteration
-    if S.nspin == 1
+    if S.spin_typ == 0
         if S.MixingVariable == 1
             err = (norm(S.Veff - Veff_temp))/(norm(S.Veff));
         else
             err = (norm(S.rho - rho_temp))/(norm(S.rho));
         end
-    else
+    elseif S.spin_typ == 1
         S.netM = dot(S.W,S.rho(:,2)) - dot(S.W,S.rho(:,3));
         fprintf('======================================\n');
         fprintf('Net magnetization in this iteration is: % .15f \n', S.netM);
@@ -320,7 +321,7 @@ while count_SCF <= S.MAXIT_SCF
     fprintf(' Error in SCF iteration: %.4e \n',err) ;
 
     % Mixing to accelerate SCF convergence    
-    if S.nspin == 1
+    if S.spin_typ == 0
         if S.MixingVariable == 1 % potential mixing
             % shift Veff and Veff_temp so they have mean 0
             if S.BC == 2
@@ -360,7 +361,7 @@ while count_SCF <= S.MAXIT_SCF
             % Effective potential
             S.Veff = real(bsxfun(@plus,S.phi,S.Vxc));
         end
-    else
+    elseif S.spin_typ == 1
         if S.MixingVariable == 1 % potential mixing
             % shift Veff and Veff_temp so they have mean 0
             if S.BC == 2
@@ -420,10 +421,10 @@ while count_SCF <= S.MAXIT_SCF
 	S_Debug.relax(S.Relax_iter).scf_runtime(count_SCF,1) = scf_runtime;
 	fprintf(' This SCF iteration took %.3f s.\n\n', scf_runtime);	
 
-    if S.nspin == 1
+    if S.spin_typ == 0
         fprintf(fileID,'%-6d      %18.10E        %.3E        %.3f\n', ...
                 count_SCF, S.Etotal/S.n_atm, err, scf_runtime);
-    else
+    elseif S.spin_typ == 1
         fprintf(fileID,'%-6d      %18.10E        %11.4E        %.3E        %.3f\n', ...
                 count_SCF, S.Etotal/S.n_atm, S.netM, err, scf_runtime);
     end

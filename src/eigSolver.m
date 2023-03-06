@@ -27,9 +27,16 @@ if S.parallel ~= 1
             kpt = ks - S.tnkpt;
             spin = 2;
         end
-%         S.spinFlag = spin; % to be used in h_nonlocal_vectro_mult, to decide which col of VxcScan3 will be used
 		% Heff = spdiags(S.Veff(:,spin),0,S.N,S.N);
-		Heff = S.Veff(:,spin);
+        if S.nspinor == 1
+            Heff = S.Veff(:,spin);
+        elseif S.nspinor == 2
+            if S.nspden == 1
+                Heff = vertcat(S.Veff,S.Veff);
+            elseif S.nspden == 2
+                Heff = vertcat(S.Veff(:,1),S.Veff(:,2));
+            end
+        end
         rng('default'); % Initialize random number generator
 		rng(ks+1);
 		%opts = struct('maxit', 10000, 'tol', 1e-6, 'p', S.Nev+10, 'v0', rand(S.N,1), 'isreal', true);

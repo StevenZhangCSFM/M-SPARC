@@ -66,7 +66,7 @@ end
 
 sum_f_tot = 0.0;
 sum_f_mag = 0.0;
-if S.spin_typ ~= 0
+if S.spin_typ == 1
     f_tot = f_wavg(1:S.N) + f_wavg(S.N+1:2*S.N);
     f_mag = f_wavg(1:S.N) - f_wavg(S.N+1:2*S.N);
     sum_f_tot = sum(f_tot);
@@ -76,7 +76,8 @@ else
     % f_mag is N/A for spin-unporlaized calculations
 end
 
-Pf = zeros(S.N,S.nspin);
+% TODO: change it for non-collinear
+Pf = zeros(S.N,S.nspden);
 % apply preconditioner to the weighted residual
 if S.MixingPrecond > 0
     % precondition total density
@@ -91,7 +92,7 @@ else
     Pf(:,1) = amix * f_tot;     % mixing param is included in Pf
 end
 
-if S.spin_typ ~= 0
+if S.spin_typ == 1
     if S.MixingPrecondMag ~= 0
         if S.MixingPrecondMag == 1
             k_TF_mag = S.precond_kerker_kTF_mag;
@@ -103,7 +104,7 @@ if S.spin_typ ~= 0
     end
 end
 
-if S.spin_typ ~= 0
+if S.spin_typ == 1
     sum_Pf_tot = sum(Pf(:,1));
     shift_Pf_tot = (sum_f_tot - sum_Pf_tot)/S.N;
     Pf(:,1) = Pf(:,1) + shift_Pf_tot;
@@ -116,7 +117,7 @@ end
 % x_kp1 = x_wavg + mix_param * f_wavg;
 if S.spin_typ == 0
     x_kp1 = x_wavg + Pf;
-else
+elseif S.spin_typ == 1
     x_kp1 = x_wavg + vertcat(Pf(:,1) + Pf(:,2), Pf(:,1) - Pf(:,2))/2;
 end
 
@@ -126,7 +127,7 @@ if S.MixingVariable == 0
 	% slightly inaccuate integral
 	if S.MixingPrecond ~= 0
 		% scale the density
-		x_kp1 = x_kp1 * (-S.NegCharge/sum(S.W'*reshape(x_kp1,S.N,S.nspin),2));
+		x_kp1 = x_kp1 * (-S.NegCharge/sum(S.W'*reshape(x_kp1,S.N,S.nspden),2));
 	end
 end
 

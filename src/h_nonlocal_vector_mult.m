@@ -16,6 +16,9 @@ function  Hnlx = h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Veff,X,S,kptv
 % @copyright (c) 2019 Material Physics & Mechanics Group, Georgia Tech
 %========================================================================================
 
+assert(size(Veff,1) == S.nspinor*S.N);
+assert(size(X,1) == S.nspinor*S.N);
+
 if S.nspinor == 1
     Hnlx = -0.5*(lapVec(DL11,DL22,DL33,DG1,DG2,DG3,X,S)) + bsxfun(@times,Veff,X);
 
@@ -79,10 +82,12 @@ if S.nspinor == 1
     
 elseif S.nspinor == 2
     
-    assert(size(Veff,1) == S.N);
-    assert(size(X,1) == 2*S.N);
-    Hnlx = [Veff; Veff].*X;
-    fac = 1.0i;
+    Hnlx = Veff.*X;
+    if (kptvec(1) == 0 && kptvec(2) == 0 && kptvec(3) == 0) && (S.SOC_flag == 0)
+        fac = 1.0;
+    else
+        fac = 1.0i;
+    end
     
     for spinor = 1:S.nspinor
         ndrange = (1+(spinor-1)*S.N:spinor*S.N);

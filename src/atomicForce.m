@@ -136,11 +136,11 @@ if S.NLCC_flag
             % Calculate xc 2nd term force components
             [II_rb,JJ_rb,KK_rb] = ndgrid(ii_s:ii_e,jj_s:jj_e,kk_s:kk_e);
             Rowcount_rb = (KK_rb-1)*S.Nx*S.Ny + (JJ_rb-1)*S.Nx + II_rb;
-            if S.nspin == 1
+            if S.spin_typ == 0
                 force_xc(JJ_a,1) = force_xc(JJ_a,1) + sum(sum(sum( drho_Tilde_at_x(II,JJ,KK) .* ( S.Vxc(Rowcount_rb) ) .* S.W(Rowcount_rb) )));
                 force_xc(JJ_a,2) = force_xc(JJ_a,2) + sum(sum(sum( drho_Tilde_at_y(II,JJ,KK) .* ( S.Vxc(Rowcount_rb) ) .* S.W(Rowcount_rb) )));
                 force_xc(JJ_a,3) = force_xc(JJ_a,3) + sum(sum(sum( drho_Tilde_at_z(II,JJ,KK) .* ( S.Vxc(Rowcount_rb) ) .* S.W(Rowcount_rb) )));
-            else
+            elseif S.spin_typ == 1
                 vxc = S.Vxc(:,1)+S.Vxc(:,2);
                 force_xc(JJ_a,1) = force_xc(JJ_a,1) + sum(sum(sum( 0.5*drho_Tilde_at_x(II,JJ,KK) .* (vxc(Rowcount_rb) ) .* S.W(Rowcount_rb) )));
                 force_xc(JJ_a,2) = force_xc(JJ_a,2) + sum(sum(sum( 0.5*drho_Tilde_at_y(II,JJ,KK) .* (vxc(Rowcount_rb) ) .* S.W(Rowcount_rb) )));

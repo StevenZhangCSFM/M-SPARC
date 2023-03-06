@@ -11,13 +11,20 @@ function S = electronDensity(S)
 %
 S.rho = 0 * S.rho;
 
-if S.nspinor == 1
-    if S.nspin == 1
+if S.spin_typ == 0
+    if S.nspinor == 1
         for kpt =1:S.tnkpt
             S.rho = S.rho + 2*S.wkpt(kpt)* sum( bsxfun(@times,S.psi(:,:,kpt).*conj(S.psi(:,:,kpt)),S.occ(:,kpt)'),2);
         end
-        S.rho = real(S.rho);
-    else
+    elseif S.nspinor == 2
+        for kpt =1:S.tnkpt
+             S.rho = S.rho + sum(reshape(S.wkpt(kpt)* sum( bsxfun(@times,S.psi(:,:,kpt).*conj(S.psi(:,:,kpt)),S.occ(:,kpt)'),2),S.N,[]),2);
+        end
+    end
+    S.rho = real(S.rho);
+    
+elseif S.spin_typ == 1
+    if S.nspinor == 1
         ks = 1;
         for spin =1:S.nspin
             for kpt =1:S.tnkpt
@@ -25,22 +32,16 @@ if S.nspinor == 1
                 ks = ks + 1;
             end
         end
-        S.rho(:,2:3) = real(S.rho(:,2:3));
-        S.rho(:,1) = S.rho(:,2) + S.rho(:,3);
-    end
-    
-elseif S.nspinor == 2
-    
-    if S.spin_typ == 0
+    elseif S.nspinor == 2
         for kpt =1:S.tnkpt
-             S.rho = S.rho + sum(reshape(S.wkpt(kpt)* sum( bsxfun(@times,S.psi(:,:,kpt).*conj(S.psi(:,:,kpt)),S.occ(:,kpt)'),2),S.N,[]),2);
+             S.rho(:,2:3) = S.rho(:,2:3) + reshape(S.wkpt(kpt)* sum( bsxfun(@times,S.psi(:,:,kpt).*conj(S.psi(:,:,kpt)),S.occ(:,kpt)'),2),S.N,[]);
         end
-        S.rho = real(S.rho);
-    elseif S.spin_typ == 1
-        error('Not implemented yet!');	
-    elseif S.spin_typ == 2
-        error('Not implemented yet!');	
     end
+    S.rho(:,2:3) = real(S.rho(:,2:3));
+    S.rho(:,1) = S.rho(:,2) + S.rho(:,3);
+    
+elseif S.spin_typ == 2
+    error("non-collinear spin not implemented yet!\n");
 end
 	
 end

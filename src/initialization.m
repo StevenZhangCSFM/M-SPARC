@@ -301,21 +301,39 @@ end
 % check spin-orbit coupling
 for ityp = 1:S.n_typ
     if S.Atm(ityp).pspsoc == 1
-        S.SOC_flag = 1;
-        S.nspinor = 2;
+        S.SOC_flag = 1;        
         break;
     end
 end
 
-% Set up number of spin
+% no-spin polarized calculation
 if S.spin_typ == 0
 	S.nspin = 1;
-else
-	S.nspin = 2;
+    S.nspden = 1;
+    if S.SOC_flag == 1
+        S.nspinor = 2;
+    end
+% collinear polarized calculation
+elseif S.spin_typ == 1
+    if S.SOC_flag == 1
+        S.nspin = 1;
+        S.nspinor = 2;
+    else
+        S.nspin = 2;
+        S.nspinor = 1;
+    end
+    S.nspden = 2;
+% non-collinear polarized calculation
+elseif S.spin_typ == 2
+    S.nspin = 1;
+    S.nspinor = 2;
+    S.nspden = 4;
+    error("non-collinear not implemented yet!");
 end
+fprintf(' nspin = %d, nspinor = %d, nspden = %d\n', S.nspin, S.nspinor, S.nspden);
 
 % Provide default spin if not provided
-if S.nspin == 2
+if S.spin_typ == 1
 	rng('default');
 	for ityp = 1:S.n_typ
 		if(S.IsSpin(ityp) == 0)
@@ -691,44 +709,12 @@ elseif S.MixingPrecond == 3 % truncated kerker
 	S.precondcoeff_k         = const_temp;
 end
 
-if S.nspin == 1
-	S.occfac = 2/S.nspinor;
-else
-	S.occfac = 1/S.nspinor;
-end
-
-% Name of the relax file
-% if S.RelaxFlag == 1
-%     S.relaxfname = strcat(filename,'.geopt'); 
-%     i = 1;
-%     while exist(S.relaxfname,'file')
-%         S.relaxfname = sprintf('%s.geopt_%d',filename,i);
-%         i = i + 1;
-%     end
-% 
-%     % if there are already 100 files, then start using .geopt only
-%     OUT_MAX = 100;
-%     if i > OUT_MAX
-%         S.relaxfname = strcat(filename,'.geopt'); 
-%     end
+% if S.nspin == 1
+% 	S.occfac = 2/S.nspinor;
+% else
+% 	S.occfac = 1/S.nspinor;
 % end
-
-% Name of the MD file
-% if S.MDFlag == 1
-%     S.mdfname = strcat(filename,'.aimd'); 
-%     i = 1;
-%     while exist(S.mdfname,'file')
-%         S.mdfname = sprintf('%s.aimd_%d',filename,i);
-%         i = i + 1;
-%     end
-% 
-%     % if there are already 100 files, then start using .geopt only
-%     OUT_MAX = 100;
-%     if i > OUT_MAX
-%         S.mdfname = strcat(filename,'.aimd'); 
-%     end
-% end
-
+S.occfac = 2/S.nspinor/S.nspin;
 
 if (S.RelaxFlag || S.MDFlag)
 	% Name of the restart file
@@ -834,6 +820,7 @@ ncpy_orbitals = 4; % 4 copies required during chebyshev filtering
 if S.nspin ~= 1, ncpy_orbitals = ncpy_orbitals * 2; end
 % for kpoints, the factor 2 is for complex entries
 if S.tnkpt ~= 1, ncpy_orbitals = ncpy_orbitals * 2 * S.tnkpt; end
+if S.nspinor ~= 1, ncpy_orbitals = ncpy_orbitals * 2; end
 memory_orbitals = S.N * S.Nev * size_double * ncpy_orbitals;
 
 % sparse matrices
@@ -1162,6 +1149,7 @@ S.alph = 0.0;
 % SOC
 S.SOC_flag = 0;
 S.nspinor = 1;
+S.nspden = 1;
 
 % DFT-D3 parameters
 S.d3Flag = 0;
