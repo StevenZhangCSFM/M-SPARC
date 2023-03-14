@@ -26,52 +26,10 @@ INDX_zerorho = (rho < S.xc_rhotol);
 rho(INDX_zerorho) = S.xc_rhotol;
 
 if S.spin_typ == 0
-	if S.xc == 0 % LDA_PW
-		
-% 		%rho = rho+(1e-50) ; % to avoid divide by zero error
-% 		p = 1 ;
-% 		A = 0.031091 ;
-% 		alpha1 = 0.21370 ;
-% 		beta1 = 7.5957 ;
-% 		beta2 = 3.5876 ;
-% 		beta3 = 1.6382 ;
-% 		beta4 = 0.49294 ;
-% 		CEnergyPotential = (0.75./(pi*(rho+S.rho_Tilde_at))).^(1/3) ;
-% 		CEnergyPotential = -2*A*(1+alpha1*CEnergyPotential).*log(1+1./(2*A*( beta1*(CEnergyPotential.^0.5) ...
-% 		   + beta2*CEnergyPotential + beta3*(CEnergyPotential.^1.5) + beta4*(CEnergyPotential.^(p+1.0))))) ;
-% 		%rho = rho-(1e-50) ;
-% 		Exc = sum(CEnergyPotential.*(rho+S.rho_Tilde_at).*S.W) - C2*sum(((rho+S.rho_Tilde_at).^(4/3)).*S.W) ;
-
-        Exc = sum(S.e_xc.*(rho+S.rho_Tilde_at).*S.W); 
-    elseif S.xc == 1 % LDA_PZ
-% 		A = 0.0311;
-% 		B = -0.048 ;
-% 		C = 0.002 ;
-% 		D = -0.0116 ;
-% 		gamma1 = -0.1423 ;
-% 		beta1 = 1.0529 ;
-% 		beta2 = 0.3334 ;
-% 		C2 = 0.73855876638202;
-% 		%rho = rho+(1e-50) ; % to avoid divide by zero error
-% 		CEnergyPotential = (0.75./(pi*(rho+S.rho_Tilde_at))).^(1/3) ;
-% 		islt1 = (CEnergyPotential < 1.0);
-% 		CEnergyPotential(islt1) = A * log(CEnergyPotential(islt1)) + B ...
-% 		   + C * CEnergyPotential(islt1) .* log(CEnergyPotential(islt1)) ...
-% 		   + D * CEnergyPotential(islt1);
-% 		CEnergyPotential(~islt1) = gamma1./(1.0+beta1*sqrt(CEnergyPotential(~islt1))+beta2*CEnergyPotential(~islt1));
-% 		%rho = rho-(1e-50) ;
-% 		Exc = sum(CEnergyPotential.*(rho+S.rho_Tilde_at).*S.W) - C2*sum(((rho+S.rho_Tilde_at).^(4/3)).*S.W) ;
-        
-        Exc = sum(S.e_xc.*(rho+S.rho_Tilde_at).*S.W); 
-	elseif S.xc == 2 || S.xc == -102 || S.xc == -108 ...
-            || S.xc == 40 || S.xc == 41 || S.xc == 427 % GGA, including vdWDF
-		Exc = sum(S.e_xc.*(rho+S.rho_Tilde_at).*S.W);
-        if (S.vdWDFFlag == 1) || (S.vdWDFFlag == 2) % add vdW energy in Exc
-			Exc = Exc + S.vdWenergy; 
-        end
-    elseif S.xc == 4 % S.xc == 4 SCAN functional, can contain more metaGGA functionals
-        Exc = sum(S.e_xc.*(rho+S.rho_Tilde_at).*S.W); % the formula is similar to GGA
-	end
+    Exc = sum(S.e_xc.*(rho+S.rho_Tilde_at).*S.W);
+    if (S.vdWDFFlag == 1) || (S.vdWDFFlag == 2) % add vdW energy in Exc
+        Exc = Exc + S.vdWenergy; 
+    end
 	% Exchange-correlation energy double counting correction
 	Exc_dc = sum(S.Vxc.*rho.*S.W) ;
     if (S.countPotential > 0) && (S.xc == 4) % S.xc == 4 SCAN functional
@@ -81,7 +39,7 @@ if S.spin_typ == 0
 elseif S.spin_typ == 1
 	Exc = sum(S.e_xc.*(rho(:,1)+S.rho_Tilde_at).*S.W);
 	% Exchange-correlation energy double counting correction
-	Exc_dc = sum(sum(S.Vxc.*rho(:,2:3),2).*S.W) ;
+	Exc_dc = sum(sum(S.Vxc.*rho(:,2:3),2).*S.W);
     if (S.vdWDFFlag == 1) || (S.vdWDFFlag == 2) % add vdW energy in Exc
 		Exc = Exc + S.vdWenergy; 
     end

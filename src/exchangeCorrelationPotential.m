@@ -128,7 +128,7 @@ function [e_xc,Vxc,dvxcdgrho] = LDA_PW(rho)
     C2 = 0.73855876638202 ; 
 	C3 = 0.9847450218427;
     
-    CEnergyPotential = (0.75./(pi*(rho+S.rho_Tilde_at))).^(1/3) ;
+    CEnergyPotential = (0.75./(pi*rho)).^(1/3) ;
     CEnergyPotential = -2*A*(1+alpha1*CEnergyPotential).*log(1+1./(2*A*( beta1*(CEnergyPotential.^0.5) ...
        + beta2*CEnergyPotential + beta3*(CEnergyPotential.^1.5) + beta4*(CEnergyPotential.^(p+1.0))))) ;
     
@@ -158,7 +158,7 @@ function [e_xc,Vxc,dvxcdgrho] = LDA_PZ(rho)
     C2 = 0.73855876638202;
 	C3 = 0.9847450218427;
     
-    CEnergyPotential = (0.75./(pi*(rho+S.rho_Tilde_at))).^(1/3) ;
+    CEnergyPotential = (0.75./(pi*rho)).^(1/3) ;
     islt1 = (CEnergyPotential < 1.0);
     CEnergyPotential(islt1) = A * log(CEnergyPotential(islt1)) + B ...
        + C * CEnergyPotential(islt1) .* log(CEnergyPotential(islt1)) ...
