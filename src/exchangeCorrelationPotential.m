@@ -56,12 +56,19 @@ XC.coeff_tt = 1.0/(4.0 * 4.0 * XC.piinv * (3.0 * pi^2)^XC.third);
 XC.sq_rsfac = sqrt(XC.rsfac);
 XC.sq_rsfac_inv = 1.0/XC.sq_rsfac;
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+rho = S.rho;
+if S.NLCC_flag 
+    rho = rho+S.rho_Tilde_at;
+end
+rho(rho < S.xc_rhotol) = S.xc_rhotol;
 
 if S.spin_typ == 0
 	if S.xc == 0
-		S = LDA_PW(S);
+		[S.e_xc,S.Vxc,S.dvxcdgrho] = LDA_PW(rho);
 	elseif S.xc == 1
-		S = LDA_PZ(S);
+		[S.e_xc,S.Vxc,S.dvxcdgrho] = LDA_PZ(rho);
 	elseif S.xc == 2 || S.xc == 41 || S.xc == 427 % For PBE_GGA and PBE0
 		S = GGA_PBE(S,XC);
 	elseif (S.xc == -102) || (S.xc == -108)
@@ -80,7 +87,7 @@ if S.spin_typ == 0
 	end
 elseif S.spin_typ == 1
     if S.xc == 0
-		S = LSDA_PW(S,XC);
+		[S.e_xc,S.Vxc,S.dvxcdgrho] = LSDA_PW(rho,XC);
 	elseif S.xc == 1
 		S = LSDA_PZ(S,XC);
 	elseif S.xc == 2 || S.xc == 41 || S.xc == 427 % For PBE_GGA and PBE0
@@ -106,13 +113,8 @@ end
 end
 %--------------------------------------------------------------------------
 
-function [S] = LDA_PW(S)
-    if S.NLCC_flag 
-        rho = S.rho+S.rho_Tilde_at;
-    else 
-        rho = S.rho;
-    end
-	rho(rho < S.xc_rhotol) = S.xc_rhotol;
+
+function [e_xc,Vxc,dvxcdgrho] = LDA_PW(rho)
 	% correlation parameters
 	p = 1 ;
 	A = 0.031091 ;
@@ -123,27 +125,27 @@ function [S] = LDA_PW(S)
 	beta4 = 0.49294 ;
 
 	% exchange parameters
+    C2 = 0.73855876638202 ; 
 	C3 = 0.9847450218427;
-
+    
+    CEnergyPotential = (0.75./(pi*(rho+S.rho_Tilde_at))).^(1/3) ;
+    CEnergyPotential = -2*A*(1+alpha1*CEnergyPotential).*log(1+1./(2*A*( beta1*(CEnergyPotential.^0.5) ...
+       + beta2*CEnergyPotential + beta3*(CEnergyPotential.^1.5) + beta4*(CEnergyPotential.^(p+1.0))))) ;
+    
+    e_xc = CEnergyPotential - C2 * rho.^(1/3);
 	% exchange-correlation potential
 	%rho = rho+(1e-50) ;
-	S.Vxc = (0.75./(pi*rho)).^(1/3) ;
-	S.Vxc = - C3*(rho.^(1/3)) + (-2*A*(1+alpha1*S.Vxc)).*log(1+1./(2*A*(beta1*(S.Vxc.^0.5) + beta2*S.Vxc + beta3*(S.Vxc.^1.5) + beta4*(S.Vxc.^(p+1))))) ...
-		- (S.Vxc/3).*(-2*A*alpha1*log(1+1./(2*A*( beta1*(S.Vxc.^0.5) + beta2*S.Vxc + beta3*(S.Vxc.^1.5) + beta4*(S.Vxc.^(p+1))))) ...
-		- ((-2*A*(1+alpha1*S.Vxc)).*(A*( beta1*(S.Vxc.^-0.5)+ 2*beta2 + 3*beta3*(S.Vxc.^0.5) + 2*(p+1)*beta4*(S.Vxc.^p) ))) ...
-		./((2*A*( beta1*(S.Vxc.^0.5) + beta2*S.Vxc + beta3*(S.Vxc.^1.5) + beta4*(S.Vxc.^(p+1)) ) ) ...
-		.*(2*A*( beta1*(S.Vxc.^0.5) + beta2*S.Vxc + beta3*(S.Vxc.^1.5) + beta4*(S.Vxc.^(p+1)) ) )+(2*A*( beta1*(S.Vxc.^0.5) + beta2*S.Vxc + beta3*(S.Vxc.^1.5) + beta4*(S.Vxc.^(p+1)) ) )) ) ;
-	S.dvxcdgrho = zeros(size(S.Vxc));
+	Vxc = (0.75./(pi*rho)).^(1/3) ;
+	Vxc = - C3*(rho.^(1/3)) + (-2*A*(1+alpha1*Vxc)).*log(1+1./(2*A*(beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1))))) ...
+		- (Vxc/3).*(-2*A*alpha1*log(1+1./(2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1))))) ...
+		- ((-2*A*(1+alpha1*Vxc)).*(A*( beta1*(Vxc.^-0.5)+ 2*beta2 + 3*beta3*(Vxc.^0.5) + 2*(p+1)*beta4*(Vxc.^p) ))) ...
+		./((2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1)) ) ) ...
+		.*(2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1)) ) )+(2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1)) ) )) ) ;
+	dvxcdgrho = zeros(size(Vxc));
 end
 %--------------------------------------------------------------------------
 
-function [S] = LDA_PZ(S) 
-    if S.NLCC_flag 
-        rho = S.rho+S.rho_Tilde_at;
-    else 
-        rho = S.rho;
-    end
-	rho(rho < S.xc_rhotol) = S.xc_rhotol;
+function [e_xc,Vxc,dvxcdgrho] = LDA_PZ(rho) 
 	% correlation parameters
 	A = 0.0311;
 	B = -0.048;
@@ -153,20 +155,29 @@ function [S] = LDA_PZ(S)
 	beta1 = 1.0529;
 	beta2 = 0.3334;
 	% exchange parameters
+    C2 = 0.73855876638202;
 	C3 = 0.9847450218427;
+    
+    CEnergyPotential = (0.75./(pi*(rho+S.rho_Tilde_at))).^(1/3) ;
+    islt1 = (CEnergyPotential < 1.0);
+    CEnergyPotential(islt1) = A * log(CEnergyPotential(islt1)) + B ...
+       + C * CEnergyPotential(islt1) .* log(CEnergyPotential(islt1)) ...
+       + D * CEnergyPotential(islt1);
+    CEnergyPotential(~islt1) = gamma1./(1.0+beta1*sqrt(CEnergyPotential(~islt1))+beta2*CEnergyPotential(~islt1));
+    e_xc = CEnergyPotential - C2 * rho.^(1/3);
+    
 	% exchange-correlation potential
-	%rho = rho+(1e-50);
-	S.Vxc = (0.75./(pi*rho)).^(1/3);
-	islessthan1 = (S.Vxc < 1.0);
-	S.Vxc(islessthan1) = log(S.Vxc(islessthan1)).*(A+(2.0/3.0)*C*S.Vxc(islessthan1)) ...
-		+ (B-(1.0/3.0)*A) + (1.0/3.0)*(2.0*D-C)* S.Vxc(islessthan1);
-	S.Vxc(~islessthan1) = (gamma1 + (7.0/6.0)*gamma1*beta1*sqrt(S.Vxc(~islessthan1)) ...
-		+ (4.0/3.0)*gamma1*beta2*S.Vxc(~islessthan1))./(1+beta1*sqrt(S.Vxc(~islessthan1))+beta2*S.Vxc(~islessthan1)).^2;
-	S.Vxc = S.Vxc - C3*(rho.^(1/3));
+	Vxc = (0.75./(pi*rho)).^(1/3);
+	islessthan1 = (Vxc < 1.0);   
+	Vxc(islessthan1) = log(Vxc(islessthan1)).*(A+(2.0/3.0)*C*Vxc(islessthan1)) ...
+		+ (B-(1.0/3.0)*A) + (1.0/3.0)*(2.0*D-C)* Vxc(islessthan1);
+	Vxc(~islessthan1) = (gamma1 + (7.0/6.0)*gamma1*beta1*sqrt(Vxc(~islessthan1)) ...
+		+ (4.0/3.0)*gamma1*beta2*Vxc(~islessthan1))./(1+beta1*sqrt(Vxc(~islessthan1))+beta2*Vxc(~islessthan1)).^2;
+	Vxc = Vxc - C3*(rho.^(1/3));
 	isRhoZero = (abs(rho) < 1e-15);
-	S.Vxc(isRhoZero) = 0;
+	Vxc(isRhoZero) = 0;
 	%rho = rho-(1e-50) ;
-	S.dvxcdgrho = zeros(size(rho,1),1);
+	dvxcdgrho = zeros(size(rho,1),1);
 end
 %------------------------------------------------------------------------------------------------------------------------------    
 
@@ -432,16 +443,16 @@ end
 %--------------------------------------------------------------------------
 
 
-function [S] = LSDA_PW(S,XC)
-	rho = S.rho;
-    if S.NLCC_flag 
-        rho(:,2) = rho(:,2)+S.rho_Tilde_at * 0.5;
-        rho(:,3) = rho(:,3)+S.rho_Tilde_at * 0.5;
-    end
-	rho(rho < S.xc_rhotol) = S.xc_rhotol;
-	rho(:,1) = rho(:,2) + rho(:,3);
-	% Arrays
-	%rho = rho+(1e-50) ;
+function [e_xc,Vxc,dvxcdgrho] = LSDA_PW(rho,XC)
+% 	rho = S.rho;
+%     if S.NLCC_flag 
+%         rho(:,2) = rho(:,2)+S.rho_Tilde_at * 0.5;
+%         rho(:,3) = rho(:,3)+S.rho_Tilde_at * 0.5;
+%     end
+% 	rho(rho < S.xc_rhotol) = S.xc_rhotol;
+% 	rho(:,1) = rho(:,2) + rho(:,3);
+
+    % Arrays	
 	rho_updnm1_3 = rho(:,2:3).^(-XC.third);
 	rhom1_3 = rho(:,1).^(-XC.third);
 	rhotot_inv = rhom1_3.^3;
@@ -462,7 +473,7 @@ function [S] = LSDA_PW(S,XC)
 
 	v_xc = (4/3) * ex_lsd;
 	exc = sum(ex_lsd .* rho(:,2:3),2);
-	S.e_xc = exc .* rhotot_inv;
+	e_xc = exc .* rhotot_inv;
 
 	% -----------------------------------------------------------------------------
 	% Then takes care of the LSD correlation part of the functional
@@ -513,13 +524,12 @@ function [S] = LSDA_PW(S,XC)
 	dfzeta4_dzeta = 4.0 * zeta.^3 .* f_zeta + fp_zeta .* zeta4;
 	decrs_dzeta = dfzeta4_dzeta .* gcrs - fp_zeta .* macrs * XC.fsec_inv;
 
-	S.e_xc = S.e_xc + ecrs;
+	e_xc = e_xc + ecrs;
 	vxcadd = ecrs - rs * XC.third .* decrs_drs - zeta .* decrs_dzeta;
 	v_xc(:,1) = v_xc(:,1) + vxcadd + decrs_dzeta;
 	v_xc(:,2) = v_xc(:,2) + vxcadd - decrs_dzeta;
-	S.Vxc = v_xc;
-	
-	S.dvxcdgrho = zeros(S.N,3);
+	Vxc = v_xc;
+	dvxcdgrho = zeros(size(rho));
 end
 %--------------------------------------------------------------------------
 
