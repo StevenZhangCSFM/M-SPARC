@@ -4,6 +4,7 @@ function [S] = exchangeCorrelationPotential(S)
 %             and PBE GGA are implemented for both spin polarized and
 %             non-spin polarized calculations.
 % @ authors
+%           Xin Jing <xjing30@gatech.edu>
 %           Abhiraj Sharma <asharma424@gatech.edu>
 %           Qimen Xu <qimenxu@gatech.edu>
 %           Phanish Suryanarayana <phanish.suryanarayana@ce.gatech.edu>
@@ -11,101 +12,189 @@ function [S] = exchangeCorrelationPotential(S)
 % @copyright (c) 2019 Material Physics & Mechanics Group, Georgia Tech
 %==========================================================================
 
-%--------------------------------------------------------------------------    
-% Parameters
-%
-XC = struct;
-XC.alpha_zeta2 = 1.0 - 1.0e-6; XC.alpha_zeta = 1.0 - 1.0e-6; % ABINIT
-%XC.alpha_zeta2 = 1.0; XC.alpha_zeta = 1.0; %LIBXC
-if (strcmp(S.XC, 'GGA_PBEsol'))
-    XC.beta = 0.046;
-    XC.mu = 10.0/81.0;
-else
-    XC.beta = 0.066725;
-    %XC.beta = 0.06672455060314922;
-    XC.mu = 0.2195149727645171;
-end
-XC.fsec_inv = 1.0/1.709921;
-XC.kappa_pbe = 0.804;
-XC.rsfac = 0.6203504908994000;
-XC.kappa = XC.kappa_pbe;
-XC.mu_divkappa_pbe = XC.mu/XC.kappa_pbe;
-XC.mu_divkappa = XC.mu_divkappa_pbe;
-
-XC.ec0_aa = 0.031091; XC.ec1_aa = 0.015545; XC.mac_aa = 0.016887; % ABINIT
-%XC.ec0_aa = 0.0310907; XC.ec1_aa = 0.01554535; XC.mac_aa = 0.0168869; % LIBXC
-XC.ec0_a1 = 0.21370;  XC.ec1_a1 = 0.20548;  XC.mac_a1 = 0.11125;
-XC.ec0_b1 = 7.5957;  XC.ec1_b1 = 14.1189;  XC.mac_b1 = 10.357;
-XC.ec0_b2 = 3.5876;   XC.ec1_b2 = 6.1977;   XC.mac_b2 = 3.6231;
-XC.ec0_b3 = 1.6382;   XC.ec1_b3 = 3.3662;   XC.mac_b3 = 0.88026;
-XC.ec0_b4 = 0.49294;  XC.ec1_b4 = 0.62517;  XC.mac_b4 = 0.49671;
-
-% Constants
-XC.piinv = 1.0/pi;
-XC.third = 1.0/3.0;
-XC.twom1_3 = 2.0^(-XC.third);
-XC.sixpi2_1_3 = (6.0 * pi^2)^XC.third;
-XC.sixpi2m1_3 = 1.0/XC.sixpi2_1_3;
-XC.threefourth_divpi = (3.0/4.0) * XC.piinv;
-XC.gamma = (1.0 - log(2.0)) * XC.piinv^2;
-XC.gamma_inv = 1.0/XC.gamma;
-%beta_gamma = XC.beta * XC.gamma_inv;
-XC.factf_zeta = 1.0/(2.0^(4.0/3.0) - 2.0);
-XC.factfp_zeta = 4.0/3.0 * XC.factf_zeta * XC.alpha_zeta2;
-XC.coeff_tt = 1.0/(4.0 * 4.0 * XC.piinv * (3.0 * pi^2)^XC.third);
-XC.sq_rsfac = sqrt(XC.rsfac);
-XC.sq_rsfac_inv = 1.0/XC.sq_rsfac;
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-rho = S.rho;
-if S.NLCC_flag 
-    rho = rho+S.rho_Tilde_at;
-end
-rho(rho < S.xc_rhotol) = S.xc_rhotol;
+% rho: total density
+% sigma: square of gradient of rho
+% exc: the energy per unit particle
+% vxc: first partial derivative of the energy per unit volume in terms of the density
+% v2xc: first partial derivative of the energy per unit volume in terms of sigma
 
 if S.spin_typ == 0
-	if S.xc == 0
-		[S.e_xc,S.Vxc,S.dvxcdgrho] = LDA_PW(rho);
-	elseif S.xc == 1
-		[S.e_xc,S.Vxc,S.dvxcdgrho] = LDA_PZ(rho);
-	elseif S.xc == 2 || S.xc == 41 || S.xc == 427 % For PBE_GGA and PBE0
-		S = GGA_PBE(S,XC);
-	elseif (S.xc == -102) || (S.xc == -108)
-		S = vdW_DF(S, XC);
-    elseif S.xc == 4
-        S = mGGA(S,XC);
-    elseif S.xc == 40                   % For Hartree Fock
-        if S.usefock == 1    % For the first SCF without fock
-            S = GGA_PBE(S,XC);
+    % prepare rho and sigma
+    rho = S.rho;
+    if S.NLCC_flag 
+        rho = rho+S.rho_Tilde_at;
+    end
+    rho(rho < S.xc_rhotol) = S.xc_rhotol;
+    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+        drho_1 = S.grad_1 * rho;
+        drho_2 = S.grad_2 * rho;
+        drho_3 = S.grad_3 * rho;
+        if S.cell_typ ~= 2
+            sigma = drho_1.*drho_1 + drho_2.*drho_2 + drho_3.*drho_3;
         else
-            S.e_xc = 0.0*S.e_xc;
-            S.Vxc = 0.0*S.Vxc;
-            S.dvxcdgrho = 0.0.*S.dvxcdgrho;
-            return;
+            sigma = (S.lapc_T(1,1)*drho_1.*drho_1 + S.lapc_T(2,2)*drho_2.*drho_2 + S.lapc_T(3,3)*drho_3.*drho_3 +...
+                     S.lapc_T(1,2)*drho_1.*drho_2 + S.lapc_T(2,3)*drho_2.*drho_3 + S.lapc_T(1,3)*drho_3.*drho_1 ) ; % grad_rho . grad_rho
         end
-	end
-elseif S.spin_typ == 1
-    if S.xc == 0
-		[S.e_xc,S.Vxc,S.dvxcdgrho] = LSDA_PW(rho,XC);
-	elseif S.xc == 1
-		S = LSDA_PZ(S,XC);
-	elseif S.xc == 2 || S.xc == 41 || S.xc == 427 % For PBE_GGA and PBE0
-		S = GSGA_PBE(S,XC);
-    elseif (S.xc == -102) || (S.xc == -108)
-        S = SvdW_DF(S, XC);
-    elseif S.xc == 4
-        S = mGSGA(S,XC);
-    elseif S.xc == 40                   % For Hartree Fock
-        if S.usefock == 1    % For the first SCF without fock
-            S = GSGA_PBE(S,XC);
-        else
-            S.e_xc = 0.0*S.e_xc;
-            S.Vxc = 0.0*S.Vxc;
-            S.dvxcdgrho = 0.0.*S.dvxcdgrho;
-            return;
+        sigma(sigma < S.xc_rhotol) = S.xc_rhotol;
+    end
+
+    % iexch 
+    switch S.ixc(1)
+        case 1
+            [ex,vx] = slater(rho);
+            v2x = zeros(size(rho));
+        case 2
+            [ex,vx,v2x] = pbex(rho,sigma,S.xc_option(1));
+        otherwise
+            ex = zeros(size(rho));
+            vx = zeros(size(rho));
+            v2x = zeros(size(rho));
+    end
+    % icorr
+    switch S.ixc(2)
+        case 1
+            [ec,vc] = pz(rho);
+            v2c = zeros(size(rho));
+        case 2
+            [ec,vc] = pw(rho);
+            v2c = zeros(size(rho));
+        case 3
+            [ec,vc,v2c] = pbec(rho,sigma,S.xc_option(2));
+        otherwise
+            ec = zeros(size(rho));
+            vc = zeros(size(rho));
+            v2c = zeros(size(rho));
+    end    
+
+    if S.usefock > 1 % hybrid
+        ex = ex * (1-S.hyb_mixing);
+        vx = vx * (1-S.hyb_mixing);
+        v2x = v2x * (1-S.hyb_mixing);
+        if S.xc == 427
+            [exsr,v1xsr,v2xsr] = pbexsr(rho,sigma,S.hyb_range_pbe);
+            ex = ex - S.hyb_mixing * exsr ./ rho;
+            vx = vx - S.hyb_mixing * v1xsr;
+            v2x = v2x - S.hyb_mixing * v2xsr;
         end
     end
+    
+    exc = ex + ec;
+    vxc = vx + vc;
+    v2xc = v2x + v2c;
+
+    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+        if S.cell_typ ~= 2
+            vxc = vxc - S.grad_1 * (v2xc.*drho_1) - S.grad_2 * (v2xc.*drho_2) - S.grad_3 * (v2xc.*drho_3);
+        else
+            vxc = vxc - ( S.lapc_T(1,1)*S.grad_1*(v2xc.*drho_1) + S.lapc_T(2,2)*S.grad_2*(v2xc.*drho_2) + S.lapc_T(3,3)*S.grad_3*(v2xc.*drho_3) +...
+                             S.lapc_T(2,1)*S.grad_1*(v2xc.*drho_2) + S.lapc_T(2,1)*S.grad_2*(v2xc.*drho_1) + S.lapc_T(3,2)*S.grad_2*(v2xc.*drho_3) +...
+                             S.lapc_T(3,2)*S.grad_3*(v2xc.*drho_2) + S.lapc_T(3,1)*S.grad_1*(v2xc.*drho_3) + S.lapc_T(3,1)*S.grad_3*(v2xc.*drho_1) );
+        end
+    end
+    
+    S.e_xc = exc;
+    S.Vxc = vxc;
+    S.dvxcdgrho = v2xc;
+	
+% 	if (S.xc == -102) || (S.xc == -108)
+% 		S = vdW_DF(S, XC);
+%     elseif S.xc == 4
+%         S = mGGA(S,XC);
+%     elseif S.xc == 40                   % For Hartree Fock
+%         if S.usefock == 1    % For the first SCF without fock
+%             S = GGA_PBE(S,XC);
+%         else
+%             S.e_xc = 0.0*S.e_xc;
+%             S.Vxc = 0.0*S.Vxc;
+%             S.dvxcdgrho = 0.0.*S.dvxcdgrho;
+%             return;
+%         end
+% 	end
+elseif S.spin_typ == 1
+    rho = S.rho;
+    if S.NLCC_flag 
+        rho(:,2) = rho(:,2)+S.rho_Tilde_at * 0.5;
+        rho(:,3) = rho(:,3)+S.rho_Tilde_at * 0.5;
+    end
+	rho(rho < S.xc_rhotol) = S.xc_rhotol;
+	rho(:,1) = rho(:,2) + rho(:,3);
+    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+        drho_1 = S.grad_1 * rho;
+	    drho_2 = S.grad_2 * rho;
+	    drho_3 = S.grad_3 * rho;
+	    if S.cell_typ ~= 2
+		    sigma = drho_1.*drho_1 + drho_2.*drho_2 + drho_3.*drho_3;
+	    else
+		    sigma = (S.lapc_T(1,1)*drho_1.*drho_1 + S.lapc_T(2,2)*drho_2.*drho_2 + S.lapc_T(3,3)*drho_3.*drho_3 +...
+				     S.lapc_T(1,2)*drho_1.*drho_2 + S.lapc_T(2,3)*drho_2.*drho_3 + S.lapc_T(1,3)*drho_3.*drho_1 ) ; % grad_rho . grad_rho
+	    end
+    end
+
+    % iexch 
+    switch S.ixc(1)
+        case 1
+            [ex,vx] = slater_spin(rho);
+            v2x = zeros(size(rho));
+        case 2
+            [ex,vx,v2x] = pbex_spin(rho,sigma,S.xc_option(1));
+        otherwise
+            ex = zeros(size(rho));
+            vx = zeros(size(rho));
+            v2x = zeros(size(rho));
+    end
+    % icorr
+    switch S.ixc(2)
+        case 1
+            [ec,vc] = pz_spin(rho);
+            v2c = zeros(size(rho));
+        case 2
+            [ec,vc] = pw_spin(rho);
+            v2c = zeros(size(rho));
+        case 3
+            [ec,vc,v2c] = pbec_spin(rho,sigma,S.xc_option(2));
+        otherwise
+            ec = zeros(size(rho));
+            vc = zeros(size(rho));
+            v2c = zeros(size(rho));
+    end    
+
+    if S.usefock > 1 % hybrid
+        ex = ex * (1-S.hyb_mixing);
+        vx = vx * (1-S.hyb_mixing);
+        v2x = v2x * (1-S.hyb_mixing);
+        if S.xc == 427
+            [exsr,v1xsr,v2xsr] = pbexsr(rho(:,2:3)*2,sigma(:,2:3)*4,S.hyb_range_pbe);
+            ex = ex - S.hyb_mixing * sum(exsr,2)/2 ./ rho(:,1);
+            vx = vx - S.hyb_mixing * v1xsr;
+            v2x = v2x - S.hyb_mixing * v2xsr;
+        end
+    end
+    
+    exc = ex + ec;
+    vxc = vx + vc;
+    v2xc = v2x + v2c;
+    
+    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+        if S.cell_typ ~= 2
+		    Vxc_temp = S.grad_1 * (v2xc.*drho_1) + S.grad_2 * (v2xc.*drho_2) + S.grad_3 * (v2xc.*drho_3);
+	    else
+		    Vxc_temp = S.lapc_T(1,1)*S.grad_1*(v2xc.*drho_1) + S.lapc_T(2,2)*S.grad_2*(v2xc.*drho_2) + S.lapc_T(3,3)*S.grad_3*(v2xc.*drho_3) +...
+				       S.lapc_T(2,1)*S.grad_1*(v2xc.*drho_2) + S.lapc_T(2,1)*S.grad_2*(v2xc.*drho_1) + S.lapc_T(3,2)*S.grad_2*(v2xc.*drho_3) +...
+				       S.lapc_T(3,2)*S.grad_3*(v2xc.*drho_2) + S.lapc_T(3,1)*S.grad_1*(v2xc.*drho_3) + S.lapc_T(3,1)*S.grad_3*(v2xc.*drho_1) ;
+        end
+        vxc(:,1) = vxc(:,1) - Vxc_temp(:,2) - Vxc_temp(:,1);
+	    vxc(:,2) = vxc(:,2) - Vxc_temp(:,3) - Vxc_temp(:,1); 
+    end
+
+    S.e_xc = exc;
+    S.Vxc = vxc;
+    S.dvxcdgrho = v2xc;
+
+%     if (S.xc == -102) || (S.xc == -108)
+%         S = SvdW_DF(S, XC);
+%     elseif S.xc == 4
+%         S = mGSGA(S,XC);
+%     end
 elseif S.spin_typ == 2
     error("Not implemented yet!\n");
 end
@@ -114,300 +203,10 @@ end
 %--------------------------------------------------------------------------
 
 
-function [e_xc,Vxc,dvxcdgrho] = LDA_PW(rho)
-	% correlation parameters
-	p = 1 ;
-	A = 0.031091 ;
-	alpha1 = 0.21370 ;
-	beta1 = 7.5957 ;
-	beta2 = 3.5876 ;
-	beta3 = 1.6382 ;
-	beta4 = 0.49294 ;
 
-	% exchange parameters
-    C2 = 0.73855876638202 ; 
-	C3 = 0.9847450218427;
-    
-    CEnergyPotential = (0.75./(pi*rho)).^(1/3) ;
-    CEnergyPotential = -2*A*(1+alpha1*CEnergyPotential).*log(1+1./(2*A*( beta1*(CEnergyPotential.^0.5) ...
-       + beta2*CEnergyPotential + beta3*(CEnergyPotential.^1.5) + beta4*(CEnergyPotential.^(p+1.0))))) ;
-    
-    e_xc = CEnergyPotential - C2 * rho.^(1/3);
-	% exchange-correlation potential
-	%rho = rho+(1e-50) ;
-	Vxc = (0.75./(pi*rho)).^(1/3) ;
-	Vxc = - C3*(rho.^(1/3)) + (-2*A*(1+alpha1*Vxc)).*log(1+1./(2*A*(beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1))))) ...
-		- (Vxc/3).*(-2*A*alpha1*log(1+1./(2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1))))) ...
-		- ((-2*A*(1+alpha1*Vxc)).*(A*( beta1*(Vxc.^-0.5)+ 2*beta2 + 3*beta3*(Vxc.^0.5) + 2*(p+1)*beta4*(Vxc.^p) ))) ...
-		./((2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1)) ) ) ...
-		.*(2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1)) ) )+(2*A*( beta1*(Vxc.^0.5) + beta2*Vxc + beta3*(Vxc.^1.5) + beta4*(Vxc.^(p+1)) ) )) ) ;
-	dvxcdgrho = zeros(size(Vxc));
-end
+
+
 %--------------------------------------------------------------------------
-
-function [e_xc,Vxc,dvxcdgrho] = LDA_PZ(rho) 
-	% correlation parameters
-	A = 0.0311;
-	B = -0.048;
-	C = 0.002;
-	D = -0.0116;
-	gamma1 = -0.1423;
-	beta1 = 1.0529;
-	beta2 = 0.3334;
-	% exchange parameters
-    C2 = 0.73855876638202;
-	C3 = 0.9847450218427;
-    
-    CEnergyPotential = (0.75./(pi*rho)).^(1/3) ;
-    islt1 = (CEnergyPotential < 1.0);
-    CEnergyPotential(islt1) = A * log(CEnergyPotential(islt1)) + B ...
-       + C * CEnergyPotential(islt1) .* log(CEnergyPotential(islt1)) ...
-       + D * CEnergyPotential(islt1);
-    CEnergyPotential(~islt1) = gamma1./(1.0+beta1*sqrt(CEnergyPotential(~islt1))+beta2*CEnergyPotential(~islt1));
-    e_xc = CEnergyPotential - C2 * rho.^(1/3);
-    
-	% exchange-correlation potential
-	Vxc = (0.75./(pi*rho)).^(1/3);
-	islessthan1 = (Vxc < 1.0);   
-	Vxc(islessthan1) = log(Vxc(islessthan1)).*(A+(2.0/3.0)*C*Vxc(islessthan1)) ...
-		+ (B-(1.0/3.0)*A) + (1.0/3.0)*(2.0*D-C)* Vxc(islessthan1);
-	Vxc(~islessthan1) = (gamma1 + (7.0/6.0)*gamma1*beta1*sqrt(Vxc(~islessthan1)) ...
-		+ (4.0/3.0)*gamma1*beta2*Vxc(~islessthan1))./(1+beta1*sqrt(Vxc(~islessthan1))+beta2*Vxc(~islessthan1)).^2;
-	Vxc = Vxc - C3*(rho.^(1/3));
-	isRhoZero = (abs(rho) < 1e-15);
-	Vxc(isRhoZero) = 0;
-	%rho = rho-(1e-50) ;
-	dvxcdgrho = zeros(size(rho,1),1);
-end
-%------------------------------------------------------------------------------------------------------------------------------    
-
-function [S] = GGA_PBE(S,XC)
-    if S.NLCC_flag 
-        rho = S.rho+S.rho_Tilde_at;
-    else 
-        rho = S.rho;
-    end
-	rho(rho < S.xc_rhotol) = S.xc_rhotol;
-	drho_1 = S.grad_1 * rho;
-	drho_2 = S.grad_2 * rho;
-	drho_3 = S.grad_3 * rho;
-
-	if S.cell_typ ~= 2
-		sigma = drho_1.*drho_1 + drho_2.*drho_2 + drho_3.*drho_3;
-	else
-		sigma = (S.lapc_T(1,1)*drho_1.*drho_1 + S.lapc_T(2,2)*drho_2.*drho_2 + S.lapc_T(3,3)*drho_3.*drho_3 +...
-				 S.lapc_T(1,2)*drho_1.*drho_2 + S.lapc_T(2,3)*drho_2.*drho_3 + S.lapc_T(1,3)*drho_3.*drho_1 ) ; % grad_rho . grad_rho
-	end
-	% -------------------------------------------------------------------------------------------------------------------
-	%                                                     Calling inbuilt Libxc functions
-	% -------------------------------------------------------------------------------------------------------------------
-
-%     func_id_x = 101; % Perdew-Burke-Ernzerhof GGA functional with exchange only
-%     %mex -I/home/users/asharma424/libxc/src -I/home/users/asharma424/libxc -L/opt/etsf/lib -lxc -lm /home/users/asharma424/libxc/examples/xc.c ;
-%     fprintf('\n\n');
-%     mex -I/home/users/asharma424/Downloads/Softwares/libxc-4.3.3/src -I/home/users/asharma424/Downloads/Softwares/libxc-4.3.3 -L/usr/lib64 -lxc -lm /home/users/asharma424/Downloads/Softwares/libxc-4.3.3/examples/xc.c ;
-%     [e_x, v_x, dvxdgrho] = xc(func_id_x, rho, sigma);% e_x = exchange energy per unit particle, v_x = d(rho*e_x)/drho = e_x + rho*de_x/drho, dvxdgrho = d(rho*e_x)/dsigma = rho*de_x/dsigma + 0
-%     
-%     func_id_c = 130; % Perdew-Burke-Ernzerhof GGA functional with correlation only
-%     mex -I/home/users/asharma424/Downloads/Softwares/libxc-4.3.3/src -I/home/users/asharma424/Downloads/Softwares/libxc-4.3.3 -L/usr/lib64 -lxc -lm /home/users/asharma424/Downloads/Softwares/libxc-4.3.3/examples/xc.c ;
-%     [e_c, v_c, dvcdgrho] = xc(func_id_c, rho, sigma);% e_c = correlation energy per unit particle, v_c = d(rho*e_c)/drho = e_c + rho*de_c/drho, dvcdgrho = d(rho*e_c)/dsigma = rho*de_c/dsigma + 0
-%     fprintf('\n\n');
-%     S.e_xc = e_x + e_c ;
-%     v_xc = v_x + v_c ;
-%     S.dvxcdgrho = dvxdgrho + dvcdgrho ;
-% % 
-%     S.Vxc = v_xc - 2*( S.lapc_T(1,1)*grad_1*(S.dvxcdgrho.*drho_1) + S.lapc_T(2,2)*grad_2*(S.dvxcdgrho.*drho_2) + S.lapc_T(3,3)*grad_3*(S.dvxcdgrho.*drho_3) +...
-%                      S.lapc_T(2,1)*grad_1*(S.dvxcdgrho.*drho_2) + S.lapc_T(2,1)*grad_2*(S.dvxcdgrho.*drho_1) + S.lapc_T(3,2)*grad_2*(S.dvxcdgrho.*drho_3) +...
-%                      S.lapc_T(3,2)*grad_3*(S.dvxcdgrho.*drho_2) + S.lapc_T(3,1)*grad_1*(S.dvxcdgrho.*drho_3) + S.lapc_T(3,1)*grad_3*(S.dvxcdgrho.*drho_1) );     
-	% --------------------------------------------------------------------------------------------------------------------------
-	%                                         Direct computation
-	%                                         (taken from ABINIT)
-	% --------------------------------------------------------------------------------------------------------------------------
-   
-	
-	% Arrays
-	rho_updn = rho/2.0;
-	rho_updnm1_3 = rho_updn.^(-XC.third);
-	rhom1_3 = XC.twom1_3 * rho_updnm1_3;
-
-	rhotot_inv = rhom1_3 .* rhom1_3 .* rhom1_3;
-	rhotmo6 = sqrt(rhom1_3);
-	rhoto6 = rho .* rhom1_3 .* rhom1_3 .* rhotmo6;
-
-	%        -----------------------------------------------------------------------
-	%        First take care of the exchange part of the functional
-
-	rhomot = rho_updnm1_3;
-	ex_lsd = -XC.threefourth_divpi * XC.sixpi2_1_3 * (rhomot .* rhomot .* rho_updn);
-
-	%        Perdew-Burke-Ernzerhof GGA, exchange part
-
-	rho_inv = rhomot .* rhomot .* rhomot;
-	coeffss = (1.0/4.0) * XC.sixpi2m1_3 * XC.sixpi2m1_3 * (rho_inv .* rho_inv .* rhomot .* rhomot);
-	ss = (sigma/4.0) .* coeffss;
-    
-    if (strcmp(S.XC,'GGA_PBE') || strcmp(S.XC,'GGA_PBEsol') || strcmp(S.XC,'SCAN')...
-        || strcmp(S.XC,'PBE0') || strcmp(S.XC,'HF') || strcmp(S.XC,'HSE'))
-        divss = 1.0./(1.0 + XC.mu_divkappa * ss);
-        dfxdss = XC.mu * (divss .* divss);
-    elseif (strcmp(S.XC,'GGA_RPBE'))
-        divss = exp(-XC.mu_divkappa * ss);
-        dfxdss = XC.mu * divss;
-    end
-	
-	fx = 1.0 + XC.kappa * (1.0 - divss);
-	ex_gga = ex_lsd .* fx;
-	dssdn = (-8.0/3.0) * (ss .* rho_inv);
-	dfxdn = dfxdss .* dssdn;
-	v_xc = ex_lsd .* ((4.0/3.0) * fx + rho_updn .* dfxdn);
-
-	dssdg = 2.0 * coeffss;
-	dfxdg = dfxdss .* dssdg;
-	dvxcdgrho1 = ex_lsd .* rho_updn .* dfxdg;
-	exc = ex_gga .* rho_updn;
-
-	%        If non spin-polarized, treat spin down contribution now, similar to spin up
-
-	exc = exc * 2.0;
-	S.e_xc = exc .* rhotot_inv;
-    
-    % For hybrid functionals
-    if (S.usefock > 1 && S.xc == 41)
-        S.e_xc = (1-S.hyb_mixing) * S.e_xc;
-        v_xc = (1-S.hyb_mixing) * v_xc;
-        dvxcdgrho1 = (1-S.hyb_mixing) * dvxcdgrho1;
-    end
-    
-    if (S.usefock > 1 && S.xc == 427)
-        sigma(sigma < S.xc_rhotol) = S.xc_rhotol;
-        [sxsr,v1xsr,v2xsr] = pbexsr(rho,sigma,S.hyb_range_pbe);
-        S.e_xc = S.e_xc - S.hyb_mixing * sxsr./rho;
-        v_xc = v_xc - S.hyb_mixing * v1xsr;
-        dvxcdgrho1 = dvxcdgrho1 - 2*S.hyb_mixing * v2xsr;
-    end
-
-	%        -----------------------------------------------------------------------------
-	%        Then takes care of the LSD correlation part of the functional
-
-	rs = XC.rsfac * rhom1_3;
-	sqr_rs = XC.sq_rsfac * rhotmo6;
-	rsm1_2 = XC.sq_rsfac_inv * rhoto6;
-
-	%        Formulas A6-A8 of PW92LSD
-
-	ec0_q0 = -2.0 * XC.ec0_aa * (1.0 + XC.ec0_a1 * rs);
-	ec0_q1 = 2.0 * XC.ec0_aa *(XC.ec0_b1 * sqr_rs + XC.ec0_b2 * rs + XC.ec0_b3 * rs .* sqr_rs + XC.ec0_b4 * rs .* rs);
-	ec0_q1p = XC.ec0_aa * (XC.ec0_b1 * rsm1_2 + 2.0 * XC.ec0_b2 + 3.0 * XC.ec0_b3 * sqr_rs + 4.0 * XC.ec0_b4 * rs);
-	ec0_den = 1.0./(ec0_q1 .* ec0_q1 + ec0_q1);
-	ec0_log = -log(ec0_q1 .* ec0_q1 .* ec0_den);
-	ecrs0 = ec0_q0 .* ec0_log;
-	decrs0_drs = -2.0 * XC.ec0_aa * XC.ec0_a1 * ec0_log - ec0_q0 .* ec0_q1p .* ec0_den;
-
-	ecrs = ecrs0;
-	decrs_drs = decrs0_drs;
-	%decrs_dzeta = 0.0;
-	%zeta = 0.0;
-
-	%        Add LSD correlation functional to GGA exchange functional
-	S.e_xc = S.e_xc + ecrs;
-	v_xc = v_xc + ecrs - (rs/3.0) .* decrs_drs;
-
-	%        -----------------------------------------------------------------------------
-	%        Eventually add the GGA correlation part of the PBE functional
-	%        Note : the computation of the potential in the spin-unpolarized
-	%        case could be optimized much further. Other optimizations are left to do.
-
-	%phi_zeta = 1.0;
-	%phip_zeta = 0.0;
-	phi_zeta_inv = 1.0;
-	%phi_logder = 0.0;
-	phi3_zeta = 1.0;
-	gamphi3inv = XC.gamma_inv;
-	%phipp_zeta = (-2.0/9.0) * XC.alpha_zeta * XC.alpha_zeta;
-
-	%        From ec to bb
-	bb = ecrs * gamphi3inv;
-	dbb_drs = decrs_drs * gamphi3inv;
-	%dbb_dzeta = gamphi3inv * (decrs_dzeta - 3.0 * ecrs * phi_logder);
-
-	%        From bb to cc
-	exp_pbe = exp(-bb);
-	cc = 1.0./(exp_pbe - 1.0);
-	dcc_dbb = cc .* cc .* exp_pbe;
-	dcc_drs = dcc_dbb .* dbb_drs;
-	%dcc_dzeta = dcc_dbb .* dbb_dzeta;
-
-	%        From cc to aa
-	coeff_aa = XC.beta * XC.gamma_inv * phi_zeta_inv * phi_zeta_inv;
-	aa = coeff_aa * cc;
-	daa_drs = coeff_aa * dcc_drs;
-	%daa_dzeta = -2.0 * aa * phi_logder + coeff_aa * dcc_dzeta;
-
-	%        Introduce tt : do not assume that the spin-dependent gradients are collinear
-	grrho2 = sigma;
-	dtt_dg = 2.0 * rhotot_inv .* rhotot_inv .* rhom1_3 * XC.coeff_tt;
-	%        Note that tt is (the t variable of PBE divided by phi) squared
-	tt = 0.5 * grrho2 .* dtt_dg;
-
-	%        Get xx from aa and tt
-	xx = aa .* tt;
-	dxx_drs = daa_drs .* tt;
-	%dxx_dzeta = daa_dzeta .* tt;
-	dxx_dtt = aa;
-
-	%        From xx to pade
-	pade_den = 1.0./(1.0 + xx .* (1.0 + xx));
-	pade = (1.0 + xx) .* pade_den;
-	dpade_dxx = -xx .* (2.0 + xx) .* (pade_den.^2);
-	dpade_drs = dpade_dxx .* dxx_drs;
-	dpade_dtt = dpade_dxx .* dxx_dtt;
-	%dpade_dzeta = dpade_dxx .* dxx_dzeta;
-
-	%        From pade to qq
-	coeff_qq = tt * phi_zeta_inv * phi_zeta_inv;
-	qq = coeff_qq .* pade;
-	dqq_drs = coeff_qq .* dpade_drs;
-	dqq_dtt = pade * phi_zeta_inv * phi_zeta_inv + coeff_qq .* dpade_dtt;
-	%dqq_dzeta = coeff_qq .* (dpade_dzeta - 2.0 * pade * phi_logder);
-
-	%        From qq to rr
-	arg_rr = 1.0 + XC.beta * XC.gamma_inv * qq;
-	div_rr = 1.0./arg_rr;
-	rr = XC.gamma * log(arg_rr);
-	drr_dqq = XC.beta * div_rr;
-	drr_drs = drr_dqq .* dqq_drs;
-	drr_dtt = drr_dqq .* dqq_dtt;
-	%drr_dzeta = drr_dqq .* dqq_dzeta;
-
-	%        From rr to hh
-	hh = phi3_zeta * rr;
-	dhh_drs = phi3_zeta * drr_drs;
-	dhh_dtt = phi3_zeta * drr_dtt;
-	%dhh_dzeta = phi3_zeta * (drr_dzeta + 3.0 * rr * phi_logder);
-
-	%        The GGA correlation energy is added
-	S.e_xc = S.e_xc + hh;
-
-	%        From hh to the derivative of the energy wrt the density
-	drhohh_drho = hh - XC.third * rs .* dhh_drs - (7.0/3.0) * tt .* dhh_dtt; %- zeta * dhh_dzeta 
-	v_xc = v_xc + drhohh_drho;
-
-	%        From hh to the derivative of the energy wrt to the gradient of the
-	%        density, divided by the gradient of the density
-	%        (The v3.3 definition includes the division by the norm of the gradient)
-
-	S.dvxcdgrho = 0.5 * dvxcdgrho1 + (rho .* dtt_dg .* dhh_dtt);
-
-	if S.cell_typ ~= 2
-		S.Vxc = v_xc - S.grad_1 * (S.dvxcdgrho.*drho_1) - S.grad_2 * (S.dvxcdgrho.*drho_2) - S.grad_3 * (S.dvxcdgrho.*drho_3);
-	else
-		S.Vxc = v_xc - ( S.lapc_T(1,1)*S.grad_1*(S.dvxcdgrho.*drho_1) + S.lapc_T(2,2)*S.grad_2*(S.dvxcdgrho.*drho_2) + S.lapc_T(3,3)*S.grad_3*(S.dvxcdgrho.*drho_3) +...
-						 S.lapc_T(2,1)*S.grad_1*(S.dvxcdgrho.*drho_2) + S.lapc_T(2,1)*S.grad_2*(S.dvxcdgrho.*drho_1) + S.lapc_T(3,2)*S.grad_2*(S.dvxcdgrho.*drho_3) +...
-						 S.lapc_T(3,2)*S.grad_3*(S.dvxcdgrho.*drho_2) + S.lapc_T(3,1)*S.grad_1*(S.dvxcdgrho.*drho_3) + S.lapc_T(3,1)*S.grad_3*(S.dvxcdgrho.*drho_1) );
-	end
-end
-%--------------------------------------------------------------------------
-
 % Two functions below are for calculating van der Waals Density functional (vdW-DF).
 % Reference: 
 % Dion, M., Rydberg, H., Schröder, E., Langreth, D. C., & Lundqvist, B. I. (2004). Physical review letters, 92(24), 246401.
@@ -441,341 +240,6 @@ function [S] = SvdW_DF(S, XC)
 end
 
 %--------------------------------------------------------------------------
-
-
-function [e_xc,Vxc,dvxcdgrho] = LSDA_PW(rho,XC)
-% 	rho = S.rho;
-%     if S.NLCC_flag 
-%         rho(:,2) = rho(:,2)+S.rho_Tilde_at * 0.5;
-%         rho(:,3) = rho(:,3)+S.rho_Tilde_at * 0.5;
-%     end
-% 	rho(rho < S.xc_rhotol) = S.xc_rhotol;
-% 	rho(:,1) = rho(:,2) + rho(:,3);
-
-    % Arrays	
-	rho_updnm1_3 = rho(:,2:3).^(-XC.third);
-	rhom1_3 = rho(:,1).^(-XC.third);
-	rhotot_inv = rhom1_3.^3;
-	zeta = (rho(:,2) - rho(:,3)) .* rhotot_inv; % Check whether it is rho_up-rho_dn or rho_dn-rho_up
-	zetp = 1 + zeta * XC.alpha_zeta;
-	zetm = 1 - zeta * XC.alpha_zeta;
-	zetpm1_3 = zetp.^(-XC.third);
-	zetmm1_3 = zetm.^(-XC.third);
-
-	rhotmo6 = sqrt(rhom1_3);
-	rhoto6 = rho(:,1) .* rhom1_3 .* rhom1_3 .* rhotmo6;
-
-	% -----------------------------------------------------------------------
-	% First take care of the exchange part of the functional
-
-	rhomot = rho_updnm1_3;
-	ex_lsd = -XC.threefourth_divpi * XC.sixpi2_1_3 * (rhomot .* rhomot .* rho(:,2:3));
-
-	v_xc = (4/3) * ex_lsd;
-	exc = sum(ex_lsd .* rho(:,2:3),2);
-	e_xc = exc .* rhotot_inv;
-
-	% -----------------------------------------------------------------------------
-	% Then takes care of the LSD correlation part of the functional
-
-	rs = XC.rsfac * rhom1_3;
-	sqr_rs = XC.sq_rsfac * rhotmo6;
-	rsm1_2 = XC.sq_rsfac_inv * rhoto6;
-
-	% Formulas A6-A8 of PW92LSD
-
-	ec0_q0 = -2.0 * XC.ec0_aa * (1.0 + XC.ec0_a1 * rs);
-	ec0_q1 = 2.0 * XC.ec0_aa *(XC.ec0_b1 * sqr_rs + XC.ec0_b2 * rs + XC.ec0_b3 * rs .* sqr_rs + XC.ec0_b4 * rs .* rs);
-	ec0_q1p = XC.ec0_aa * (XC.ec0_b1 * rsm1_2 + 2.0 * XC.ec0_b2 + 3.0 * XC.ec0_b3 * sqr_rs + 4.0 * XC.ec0_b4 * rs);
-	ec0_den = 1.0./(ec0_q1 .* ec0_q1 + ec0_q1);
-	ec0_log = -log(ec0_q1 .* ec0_q1 .* ec0_den);
-	ecrs0 = ec0_q0 .* ec0_log;
-	decrs0_drs = -2.0 * XC.ec0_aa * XC.ec0_a1 * ec0_log - ec0_q0 .* ec0_q1p .* ec0_den;
-
-	mac_q0 = -2.0 * XC.mac_aa * (1.0 + XC.mac_a1 * rs);
-	mac_q1 = 2.0 * XC.mac_aa * (XC.mac_b1 * sqr_rs + XC.mac_b2 * rs + XC.mac_b3 * rs .* sqr_rs + XC.mac_b4 * rs .* rs);
-	mac_q1p = XC.mac_aa * (XC.mac_b1 * rsm1_2 + 2 * XC.mac_b2 + 3 * XC.mac_b3 * sqr_rs + 4 * XC.mac_b4 * rs);
-	mac_den = 1.0./(mac_q1 .* mac_q1 + mac_q1);
-	mac_log = -log( mac_q1 .* mac_q1 .* mac_den );
-	macrs = mac_q0 .* mac_log;
-	dmacrs_drs = -2.0 * XC.mac_aa * XC.mac_a1 * mac_log - mac_q0 .* mac_q1p .* mac_den;
-
-	%zeta = (rho(:,2) - rho(:,3)) .* rhotot_inv;
-	ec1_q0 = -2.0 * XC.ec1_aa * (1.0 + XC.ec1_a1 * rs);
-	ec1_q1 = 2.0 * XC.ec1_aa * (XC.ec1_b1 * sqr_rs + XC.ec1_b2 * rs + XC.ec1_b3 * rs .* sqr_rs + XC.ec1_b4 * rs .* rs);
-	ec1_q1p = XC.ec1_aa * (XC.ec1_b1 * rsm1_2 + 2 * XC.ec1_b2 + 3 * XC.ec1_b3 * sqr_rs + 4 * XC.ec1_b4 * rs);
-	ec1_den = 1.0./(ec1_q1 .* ec1_q1 + ec1_q1);
-	ec1_log = -log( ec1_q1 .* ec1_q1 .* ec1_den );
-	ecrs1 = ec1_q0 .* ec1_log;
-	decrs1_drs = -2.0 * XC.ec1_aa * XC.ec1_a1 * ec1_log - ec1_q0 .* ec1_q1p .* ec1_den;
-	
-	% XC.alpha_zeta is introduced in order to remove singularities for fully polarized systems.
-	zetp_1_3 = (1.0 + zeta * XC.alpha_zeta) .* (zetpm1_3.^2);
-	zetm_1_3 = (1.0 - zeta * XC.alpha_zeta) .* (zetmm1_3.^2);
-
-	f_zeta = ( (1.0 + zeta * XC.alpha_zeta2) .* zetp_1_3 + (1.0 - zeta * XC.alpha_zeta2) .* zetm_1_3 - 2.0 ) * XC.factf_zeta;
-	fp_zeta = ( zetp_1_3 - zetm_1_3 ) * XC.factfp_zeta;
-	zeta4 = zeta.^4;
-
-	gcrs = ecrs1 - ecrs0 + macrs * XC.fsec_inv;
-	ecrs = ecrs0 + f_zeta .* (zeta4 .* gcrs - macrs * XC.fsec_inv);
-	dgcrs_drs = decrs1_drs - decrs0_drs + dmacrs_drs * XC.fsec_inv;
-	decrs_drs = decrs0_drs + f_zeta .* (zeta4 .* dgcrs_drs - dmacrs_drs * XC.fsec_inv);
-	dfzeta4_dzeta = 4.0 * zeta.^3 .* f_zeta + fp_zeta .* zeta4;
-	decrs_dzeta = dfzeta4_dzeta .* gcrs - fp_zeta .* macrs * XC.fsec_inv;
-
-	e_xc = e_xc + ecrs;
-	vxcadd = ecrs - rs * XC.third .* decrs_drs - zeta .* decrs_dzeta;
-	v_xc(:,1) = v_xc(:,1) + vxcadd + decrs_dzeta;
-	v_xc(:,2) = v_xc(:,2) + vxcadd - decrs_dzeta;
-	Vxc = v_xc;
-	dvxcdgrho = zeros(size(rho));
-end
-%--------------------------------------------------------------------------
-
-
-function [S] = LSDA_PZ(S,XC)
-	error('LSDA_PZ is not implemented!');
-end
-
-
-%--------------------------------------------------------------------------
-function [S] = GSGA_PBE(S,XC)
-	rho = S.rho;
-    if S.NLCC_flag 
-        rho(:,2) = rho(:,2)+S.rho_Tilde_at * 0.5;
-        rho(:,3) = rho(:,3)+S.rho_Tilde_at * 0.5;
-    end
-	rho(rho < S.xc_rhotol) = S.xc_rhotol;
-	rho(:,1) = rho(:,2) + rho(:,3);
-	drho_1 = S.grad_1 * rho;
-	drho_2 = S.grad_2 * rho;
-	drho_3 = S.grad_3 * rho;
-	if S.cell_typ ~= 2
-		sigma = drho_1.*drho_1 + drho_2.*drho_2 + drho_3.*drho_3;
-	else
-		sigma = (S.lapc_T(1,1)*drho_1.*drho_1 + S.lapc_T(2,2)*drho_2.*drho_2 + S.lapc_T(3,3)*drho_3.*drho_3 +...
-				 S.lapc_T(1,2)*drho_1.*drho_2 + S.lapc_T(2,3)*drho_2.*drho_3 + S.lapc_T(1,3)*drho_3.*drho_1 ) ; % grad_rho . grad_rho
-	end
-	
-	
-	% Arrays
-	rho_updnm1_3 = rho(:,2:3).^(-XC.third);
-	rhom1_3 = rho(:,1).^(-XC.third);
-	rhotot_inv = rhom1_3.^3;
-	zeta = (rho(:,2) - rho(:,3)) .* rhotot_inv;
-	zetp = 1.0 + zeta * XC.alpha_zeta;
-	zetm = 1.0 - zeta * XC.alpha_zeta;
-	zetpm1_3 = zetp.^(-XC.third);       
-	zetmm1_3 = zetm.^(-XC.third);
-
-	rhotmo6 = sqrt(rhom1_3);
-	rhoto6 = rho(:,1) .* rhom1_3 .* rhom1_3 .* rhotmo6;
-
-	% -----------------------------------------------------------------------
-	% First take care of the exchange part of the functional
-
-	rhomot = rho_updnm1_3;
-	ex_lsd = -XC.threefourth_divpi * XC.sixpi2_1_3 * (rhomot .* rhomot .* rho(:,2:3));
-
-	rho_inv = rhomot .* rhomot .* rhomot;
-	coeffss = (1.0/4.0) * XC.sixpi2m1_3 * XC.sixpi2m1_3 * (rho_inv .* rho_inv .* rhomot .* rhomot);
-	ss = sigma(:,2:3) .* coeffss;
-    
-    if (strcmp(S.XC,'GGA_PBE') || strcmp(S.XC,'GGA_PBEsol') || strcmp(S.XC,'SCAN')...
-            || strcmp(S.XC,'PBE0') || strcmp(S.XC,'HF') || strcmp(S.XC,'HSE'))
-        divss = 1.0./(1.0 + XC.mu_divkappa * ss);
-        dfxdss = XC.mu * (divss .* divss);
-    elseif (strcmp(S.XC,'GGA_RPBE'))
-        divss = exp(-XC.mu_divkappa * ss);
-        dfxdss = XC.mu * divss;
-    end
-    
-	fx = 1.0 + XC.kappa * (1.0 - divss);
-	ex_gga = ex_lsd .* fx;
-	dssdn = (-8.0/3.0) * (ss .* rho_inv);
-	dfxdn = dfxdss .* dssdn;
-	v_xc = ex_lsd .* ((4.0/3.0) * fx + rho(:,2:3) .* dfxdn);
-
-	dssdg = 2.0 * coeffss;
-	dfxdg = dfxdss .* dssdg; 
-	dvxcdgrho1 = ex_lsd .* rho(:,2:3) .* dfxdg;
-	exc = sum(ex_gga .* rho(:,2:3),2);
-
-	S.e_xc = exc .* rhotot_inv;
-    
-    % For hybrid functionals
-    if (S.usefock > 1 && S.xc == 41)
-        S.e_xc = (1-S.hyb_mixing) * S.e_xc;
-        v_xc = (1-S.hyb_mixing) * v_xc;
-        dvxcdgrho1 = (1-S.hyb_mixing) * dvxcdgrho1;
-    end
-    
-    if (S.usefock > 1 && S.xc == 427)
-        sigma(sigma < S.xc_rhotol) = S.xc_rhotol;
-        [sxsr,v1xsr,v2xsr] = pbexsr(rho(:,2:3)*2,sigma(:,2:3)*4,S.hyb_range_pbe);
-        S.e_xc = S.e_xc - S.hyb_mixing * sum(sxsr,2)/2./rho(:,1);
-        v_xc = v_xc - S.hyb_mixing * v1xsr;
-        dvxcdgrho1 = dvxcdgrho1 - 2*S.hyb_mixing * v2xsr;
-    end
-    
-	% -----------------------------------------------------------------------------
-	% Then takes care of the LSD correlation part of the functional
-
-	rs = XC.rsfac * rhom1_3;
-	sqr_rs = XC.sq_rsfac * rhotmo6;
-	rsm1_2 = XC.sq_rsfac_inv * rhoto6;
-
-	%        Formulas A6-A8 of PW92LSD
-
-	ec0_q0 = -2.0 * XC.ec0_aa * (1.0 + XC.ec0_a1 * rs);
-	ec0_q1 = 2.0 * XC.ec0_aa *(XC.ec0_b1 * sqr_rs + XC.ec0_b2 * rs + XC.ec0_b3 * rs .* sqr_rs + XC.ec0_b4 * rs .* rs);
-	ec0_q1p = XC.ec0_aa * (XC.ec0_b1 * rsm1_2 + 2.0 * XC.ec0_b2 + 3.0 * XC.ec0_b3 * sqr_rs + 4.0 * XC.ec0_b4 * rs);
-	ec0_den = 1.0./(ec0_q1 .* ec0_q1 + ec0_q1);
-	ec0_log = -log(ec0_q1 .* ec0_q1 .* ec0_den);
-	%ec0_log = log( 1.0 + 1.0./ec0_q1);
-	ecrs0 = ec0_q0 .* ec0_log;
-	decrs0_drs = -2.0 * XC.ec0_aa * XC.ec0_a1 * ec0_log - ec0_q0 .* ec0_q1p .* ec0_den;
-
-	mac_q0 = -2.0 * XC.mac_aa * (1.0 + XC.mac_a1 * rs);
-	mac_q1 = 2.0 * XC.mac_aa * (XC.mac_b1 * sqr_rs + XC.mac_b2 * rs + XC.mac_b3 * rs .* sqr_rs + XC.mac_b4 * rs .* rs);
-	mac_q1p = XC.mac_aa * (XC.mac_b1 * rsm1_2 + 2 * XC.mac_b2 + 3 * XC.mac_b3 * sqr_rs + 4 * XC.mac_b4 * rs);
-	mac_den = 1.0./(mac_q1 .* mac_q1 + mac_q1);
-	mac_log = -log( mac_q1 .* mac_q1 .* mac_den );
-	macrs = mac_q0 .* mac_log;
-	dmacrs_drs = -2.0 * XC.mac_aa * XC.mac_a1 * mac_log - mac_q0 .* mac_q1p .* mac_den;
-
-	%zeta = (rho(:,2) - rho(:,3)) .* rhotot_inv;
-	ec1_q0 = -2.0 * XC.ec1_aa * (1.0 + XC.ec1_a1 * rs);
-	ec1_q1 = 2.0 * XC.ec1_aa * (XC.ec1_b1 * sqr_rs + XC.ec1_b2 * rs + XC.ec1_b3 * rs .* sqr_rs + XC.ec1_b4 * rs .* rs);
-	ec1_q1p = XC.ec1_aa * (XC.ec1_b1 * rsm1_2 + 2 * XC.ec1_b2 + 3 * XC.ec1_b3 * sqr_rs + 4 * XC.ec1_b4 * rs);
-	ec1_den = 1.0./(ec1_q1 .* ec1_q1 + ec1_q1);
-	ec1_log = -log( ec1_q1 .* ec1_q1 .* ec1_den );
-	ecrs1 = ec1_q0 .* ec1_log;
-	decrs1_drs = -2.0 * XC.ec1_aa * XC.ec1_a1 * ec1_log - ec1_q0 .* ec1_q1p .* ec1_den;
-	% XC.alpha_zeta is introduced in order to remove singularities for fully polarized systems.
-	zetp_1_3 = (1.0 + zeta * XC.alpha_zeta) .* (zetpm1_3.^2);
-	zetm_1_3 = (1.0 - zeta * XC.alpha_zeta) .* (zetmm1_3.^2);
-
-	f_zeta = ( (1.0 + zeta * XC.alpha_zeta2) .* zetp_1_3 + (1.0 - zeta * XC.alpha_zeta2) .* zetm_1_3 - 2.0 ) * XC.factf_zeta;
-	fp_zeta = ( zetp_1_3 - zetm_1_3 ) * XC.factfp_zeta;
-	zeta4 = zeta.^4;
-
-	gcrs = ecrs1 - ecrs0 + macrs * XC.fsec_inv;
-	ecrs = ecrs0 + f_zeta .* (zeta4 .* gcrs - macrs * XC.fsec_inv);
-	
-	%ecrs = ecrs0 + f_zeta .* (-macrs.* (1.0-zeta4) * XC.fsec_inv + (ecrs1-ecrs0) .* zeta4);
-	dgcrs_drs = decrs1_drs - decrs0_drs + dmacrs_drs * XC.fsec_inv;
-	decrs_drs = decrs0_drs + f_zeta .* (zeta4 .* dgcrs_drs - dmacrs_drs * XC.fsec_inv);
-	%decrs_drs = decrs0_drs + f_zeta .* (-dmacrs_drs .* (1.0 - zeta4) * XC.fsec_inv + (decrs1_drs-decrs0_drs) .* zeta4);
-	dfzeta4_dzeta = 4.0 * zeta.^3 .* f_zeta + fp_zeta .* zeta4;
-	decrs_dzeta = dfzeta4_dzeta .* gcrs - fp_zeta .* macrs * XC.fsec_inv;
-
-	% Add LSD correlation functional to GGA exchange functional
-	S.e_xc = S.e_xc + ecrs;
-	vxcadd = ecrs - rs * XC.third .* decrs_drs - zeta .* decrs_dzeta;
-	v_xc(:,1) = v_xc(:,1) + vxcadd + decrs_dzeta;
-	v_xc(:,2) = v_xc(:,2) + vxcadd - decrs_dzeta;
-	%[S.e_xc(1:20) v_xc(1:20,1) v_xc(1:20,2)] 
-	% -----------------------------------------------------------------------------
-	% Eventually add the GGA correlation part of the PBE functional
-
-	% The definition of phi has been slightly changed, because
-	% the original PBE one gives divergent behaviour for fully polarized points
-
-	phi_zeta = ( zetpm1_3 .* (1.0 + zeta * XC.alpha_zeta) + zetmm1_3 .* (1.0 - zeta * XC.alpha_zeta)   ) * 0.5;
-	phip_zeta = (zetpm1_3 - zetmm1_3) * XC.third * XC.alpha_zeta;
-	phi_zeta_inv = 1.0./phi_zeta;
-	phi_logder = phip_zeta .* phi_zeta_inv;
-	phi3_zeta = phi_zeta .* phi_zeta .* phi_zeta;
-	gamphi3inv = XC.gamma_inv * phi_zeta_inv .* phi_zeta_inv .* phi_zeta_inv;
-	
-	%        From ec to bb
-	bb = ecrs .* gamphi3inv;
-	dbb_drs = decrs_drs .* gamphi3inv;
-	dbb_dzeta = gamphi3inv .* (decrs_dzeta - 3.0 * ecrs .* phi_logder);
-	
-	% From bb to cc
-	exp_pbe = exp(-bb);
-	cc = 1.0./(exp_pbe - 1.0);
-	dcc_dbb = cc .* cc .* exp_pbe;
-	dcc_drs = dcc_dbb .* dbb_drs;
-	dcc_dzeta = dcc_dbb .* dbb_dzeta;
-
-	% From cc to aa
-	coeff_aa = XC.beta * XC.gamma_inv * phi_zeta_inv .* phi_zeta_inv;
-	aa = coeff_aa .* cc;
-	daa_drs = coeff_aa .* dcc_drs;
-	daa_dzeta = -2.0 * aa .* phi_logder + coeff_aa .* dcc_dzeta;
-
-	% Introduce tt : do not assume that the spin-dependent gradients are collinear
-	grrho2 = sigma(:,1);
-	dtt_dg = 2.0 * rhotot_inv .* rhotot_inv .* rhom1_3 * XC.coeff_tt;
-	% Note that tt is (the t variable of PBE divided by phi) squared
-	tt = 0.5 * grrho2 .* dtt_dg;
-
-	% Get xx from aa and tt
-	xx = aa .* tt;
-	dxx_drs = daa_drs .* tt;
-	dxx_dzeta = daa_dzeta .* tt;
-	dxx_dtt = aa;
-
-	% From xx to pade
-	pade_den = 1.0./(1.0 + xx .* (1.0 + xx));
-	pade = (1.0 + xx) .* pade_den;
-	dpade_dxx = -xx .* (2.0 + xx) .* (pade_den.^2);
-	dpade_drs = dpade_dxx .* dxx_drs;
-	dpade_dtt = dpade_dxx .* dxx_dtt;
-	dpade_dzeta = dpade_dxx .* dxx_dzeta;
-
-	% From pade to qq
-	coeff_qq = tt .* phi_zeta_inv .* phi_zeta_inv;
-	qq = coeff_qq .* pade;
-	dqq_drs = coeff_qq .* dpade_drs;
-	dqq_dtt = pade .* phi_zeta_inv .* phi_zeta_inv + coeff_qq .* dpade_dtt;
-	dqq_dzeta = coeff_qq .* (dpade_dzeta - 2.0 * pade .* phi_logder);
-
-	% From qq to rr
-	arg_rr = 1.0 + XC.beta * XC.gamma_inv * qq;
-	div_rr = 1.0./arg_rr;
-	rr = XC.gamma * log(arg_rr);
-	drr_dqq = XC.beta * div_rr;
-	drr_drs = drr_dqq .* dqq_drs;
-	drr_dtt = drr_dqq .* dqq_dtt;
-	drr_dzeta = drr_dqq .* dqq_dzeta;
-
-	% From rr to hh
-	hh = phi3_zeta .* rr;
-	dhh_drs = phi3_zeta .* drr_drs;
-	dhh_dtt = phi3_zeta .* drr_dtt;
-	dhh_dzeta = phi3_zeta .* (drr_dzeta + 3.0 * rr .* phi_logder);
-	% The GGA correlation energy is added
-	S.e_xc = S.e_xc + hh;
-
-	% From hh to the derivative of the energy wrt the density
-	drhohh_drho = hh - XC.third * rs .* dhh_drs - zeta .* dhh_dzeta - (7.0/3.0) * tt .* dhh_dtt;
-	v_xc(:,1) = v_xc(:,1) + drhohh_drho + dhh_dzeta;
-	v_xc(:,2) = v_xc(:,2) + drhohh_drho - dhh_dzeta;
-	
-   
-	% From hh to the derivative of the energy wrt to the gradient of the
-	% density, divided by the gradient of the density
-	% (The v3.3 definition includes the division by the norm of the gradient)
-
-	S.dvxcdgrho(:,1) = rho(:,1) .* dtt_dg .* dhh_dtt;
-	S.dvxcdgrho(:,2) = dvxcdgrho1(:,1) ;
-	S.dvxcdgrho(:,3) = dvxcdgrho1(:,2) ;
-	
-	if S.cell_typ ~= 2
-		Vxc_temp = S.grad_1 * (S.dvxcdgrho.*drho_1) + S.grad_2 * (S.dvxcdgrho.*drho_2) + S.grad_3 * (S.dvxcdgrho.*drho_3);
-	else
-		Vxc_temp = S.lapc_T(1,1)*S.grad_1*(S.dvxcdgrho.*drho_1) + S.lapc_T(2,2)*S.grad_2*(S.dvxcdgrho.*drho_2) + S.lapc_T(3,3)*S.grad_3*(S.dvxcdgrho.*drho_3) +...
-				   S.lapc_T(2,1)*S.grad_1*(S.dvxcdgrho.*drho_2) + S.lapc_T(2,1)*S.grad_2*(S.dvxcdgrho.*drho_1) + S.lapc_T(3,2)*S.grad_2*(S.dvxcdgrho.*drho_3) +...
-				   S.lapc_T(3,2)*S.grad_3*(S.dvxcdgrho.*drho_2) + S.lapc_T(3,1)*S.grad_1*(S.dvxcdgrho.*drho_3) + S.lapc_T(3,1)*S.grad_3*(S.dvxcdgrho.*drho_1) ;
-	end
-	S.Vxc(:,1) = v_xc(:,1) - Vxc_temp(:,2) - Vxc_temp(:,1);
-	S.Vxc(:,2) = v_xc(:,2) - Vxc_temp(:,3) - Vxc_temp(:,1);             
-end
 
 function [S] = mGGA(S,XC) % the function does not consider spin. The function containing spin will be developed seperately
 %     if S.countSCF == -1 % compute potential before SCF by GGA_PBE, there is no psi yet
@@ -927,6 +391,591 @@ function [S] = mGSGA(S,XC)
     S.e_xc = excScan;
 	S.VxcScan3 = VxcScan3; % like S.Vxc, two columns, 1 for up, 2 for down, to be used in h_nonlocal_vector_mult.m
     S.countPotential = S.countPotential + 1;
+end
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [ex,vx] = slater(rho)
+% slater exchange
+% @param rho  = total electron density
+
+% parameter 
+C2 = 0.73855876638202; % 3/4*(3/pi)^(1/3)
+C3 = 0.9847450218427;  % (3/pi)^(1/3)
+
+% computation
+ex = - C2 * rho.^(1./3.);
+vx = - C3 * rho.^(1./3.);
+end
+
+function [ec,vc] = pw(rho)
+% 
+% @param rho  = total electron density
+
+% parameters
+A = 0.031091 ;
+alpha1 = 0.21370 ;
+beta1 = 7.5957 ;
+beta2 = 3.5876 ;
+beta3 = 1.6382 ;
+beta4 = 0.49294 ;
+
+% computation
+rs = (0.75./(pi*rho)).^(1./3.);
+rsm12 = rs.^(-0.5);
+rs12 = rs.^0.5;
+rs32 = rs.^1.5;
+rs2 = rs.^2;
+
+om = 2*A*(beta1*rs12 + beta2*rs + beta3*rs32 + beta4*rs2);
+dom = A*(beta1*rsm12+ 2*beta2 + 3*beta3*rs12 + 2*2*beta4*rs);
+olog = log(1 + 1./om);
+t = -2*A*(1+alpha1*rs);
+ec = t.*olog;
+vc = ec - (rs/3.).*(-2*A*alpha1*olog - (t.*dom)./(om.*om+om) ) ;
+end
+
+function [ec,vc] = pz(rho)
+% 
+% @param rho  = total electron density
+
+% parameters
+A = 0.0311;
+B = -0.048;
+C = 0.002;
+D = -0.0116;
+gamma1 = -0.1423;
+beta1 = 1.0529;
+beta2 = 0.3334;
+
+% compuatation
+ec = zeros(size(rho,1),1);
+vc = zeros(size(rho,1),1);
+rs = (0.75./(pi*rho)).^(1.0/3.0) ;
+islt1 = (rs < 1.0);
+lnrs = log(rs(islt1));
+sqrtrs = sqrt(rs(~islt1));
+ec(islt1) = A * lnrs + B + C * rs(islt1) .* lnrs + D * rs(islt1);
+ox = 1.0 + beta1*sqrtrs + beta2*rs(~islt1);
+ec(~islt1) = gamma1 ./ ox;
+vc(islt1) = lnrs.*(A + (2.0/3.0)*C*rs(islt1)) + (B-(1.0/3.0)*A) + (1.0/3.0)*(2.0*D-C)* rs(islt1);
+vc(~islt1) = ec(~islt1) .* (1 + (7.0/6.0)*beta1*sqrtrs + (4.0/3.0)*beta2*rs(~islt1)) ./ ox;
+end
+
+
+function [ex,v1x,v2x] = pbex(rho,sigma,iflag)
+% PBE exchange:
+% @param rho  = total electron density
+% @param grho = |\nabla rho|^2
+% @param iflag options
+% iflag=1  J.P.Perdew, K.Burke, M.Ernzerhof, PRL 77, 3865 (1996)
+% iflag=2  PBEsol: J.P.Perdew et al., PRL 100, 136406 (2008)
+% iflag=3  RPBE: B. Hammer, et al., Phys. Rev. B 59, 7413 (1999)
+assert(iflag == 1 || iflag == 2 || iflag == 3);
+
+% parameters 
+mu_ = [0.2195149727645171 10.0/81.0 0.2195149727645171];
+mu = mu_(iflag);
+kappa = 0.804;
+threefourth_divpi = 3.0/4.0/pi;
+sixpi2_1_3 = (6.0 * pi^2)^(1.0/3.0);
+sixpi2m1_3 = 1.0/sixpi2_1_3;
+mu_divkappa = mu/kappa;
+
+% computation
+rho_updn = rho/2.0;
+rho_updnm1_3 = rho_updn.^(-1.0/3.0);
+rhomot = rho_updnm1_3;
+ex_lsd = -threefourth_divpi * sixpi2_1_3 * (rhomot .* rhomot .* rho_updn);
+rho_inv = rhomot .* rhomot .* rhomot;
+coeffss = (1.0/4.0) * sixpi2m1_3 * sixpi2m1_3 * (rho_inv .* rho_inv .* rhomot .* rhomot);
+ss = (sigma/4.0) .* coeffss;
+
+if iflag == 1 || iflag == 2
+    divss = 1.0./(1.0 + mu_divkappa * ss);
+    dfxdss = mu * (divss .* divss);
+elseif iflag == 3
+    divss = exp(-mu_divkappa * ss);
+    dfxdss = mu * divss;
+end
+
+fx = 1.0 + kappa * (1.0 - divss);
+dssdn = (-8.0/3.0) * (ss .* rho_inv);
+dfxdn = dfxdss .* dssdn;
+dssdg = 2.0 * coeffss;
+dfxdg = dfxdss .* dssdg;
+
+ex = ex_lsd .* fx;
+v1x = ex_lsd .* ((4.0/3.0) * fx + rho_updn .* dfxdn);
+v2x = 0.5 * ex_lsd .* rho_updn .* dfxdg;
+end
+
+
+function [ec,v1c,v2c] = pbec(rho,sigma,iflag)
+% PBE correlation 
+% @param rho  = total electron density
+% @param sigma = |\nabla rho|^2
+% iflag=1  J.P.Perdew, K.Burke, M.Ernzerhof, PRL 77, 3865 (1996)
+% iflag=2  PBEsol: J.P.Perdew et al., PRL 100, 136406 (2008)
+% iflag=3  RPBE: B. Hammer, et al., Phys. Rev. B 59, 7413 (1999)
+
+% parameter 
+beta_ = [0.066725 0.046 0.066725];
+beta = beta_(iflag);
+rsfac = 0.6203504908994000; % (0.75/pi)^(1/3)
+sq_rsfac = sqrt(rsfac);
+sq_rsfac_inv = 1.0/sq_rsfac;
+third = 1.0/3.0;
+twom1_3 = 2.0^(-third);
+ec0_aa = 0.031091; 
+ec0_a1 = 0.21370;  
+ec0_b1 = 7.5957;
+ec0_b2 = 3.5876;   
+ec0_b3 = 1.6382;   
+ec0_b4 = 0.49294;  
+gamma = (1.0 - log(2.0)) /pi^2;
+gamma_inv = 1/gamma;
+coeff_tt = 1.0/(4.0 * 4.0 / pi * (3.0 * pi^2)^third);
+
+% computation
+rho_updn = rho/2.0;
+rho_updnm1_3 = rho_updn.^(-third);
+rhom1_3 = twom1_3 * rho_updnm1_3;
+
+rhotot_inv = rhom1_3 .* rhom1_3 .* rhom1_3;
+rhotmo6 = sqrt(rhom1_3);
+rhoto6 = rho .* rhom1_3 .* rhom1_3 .* rhotmo6;
+
+rs = rsfac * rhom1_3;
+sqr_rs = sq_rsfac * rhotmo6;
+rsm1_2 = sq_rsfac_inv * rhoto6;
+
+%        Formulas A6-A8 of PW92LSD
+ec0_q0 = -2.0 * ec0_aa * (1.0 + ec0_a1 * rs);
+ec0_q1 = 2.0 * ec0_aa *(ec0_b1 * sqr_rs + ec0_b2 * rs + ec0_b3 * rs .* sqr_rs + ec0_b4 * rs .* rs);
+ec0_q1p = ec0_aa * (ec0_b1 * rsm1_2 + 2.0 * ec0_b2 + 3.0 * ec0_b3 * sqr_rs + 4.0 * ec0_b4 * rs);
+ec0_den = 1.0./(ec0_q1 .* ec0_q1 + ec0_q1);
+ec0_log = -log(ec0_q1 .* ec0_q1 .* ec0_den);
+ecrs0 = ec0_q0 .* ec0_log;
+decrs0_drs = -2.0 * ec0_aa * ec0_a1 * ec0_log - ec0_q0 .* ec0_q1p .* ec0_den;
+
+%        Add LSD correlation functional to GGA exchange functional
+ec = ecrs0;
+v1c = ecrs0 - (rs/3.0) .* decrs0_drs;
+
+%        -----------------------------------------------------------------------------
+%        Eventually add the GGA correlation part of the PBE functional
+%        Note : the computation of the potential in the spin-unpolarized
+%        case could be optimized much further. Other optimizations are left to do.
+
+%        From ec to bb
+bb = ecrs0 * gamma_inv;
+dbb_drs = decrs0_drs * gamma_inv;
+
+%        From bb to cc
+exp_pbe = exp(-bb);
+cc = 1.0./(exp_pbe - 1.0);
+dcc_dbb = cc .* cc .* exp_pbe;
+dcc_drs = dcc_dbb .* dbb_drs;
+
+%        From cc to aa
+coeff_aa = beta * gamma_inv;
+aa = coeff_aa * cc;
+daa_drs = coeff_aa * dcc_drs;
+
+%        Introduce tt : do not assume that the spin-dependent gradients are collinear
+dtt_dg = 2.0 * rhotot_inv .* rhotot_inv .* rhom1_3 * coeff_tt;
+%        Note that tt is (the t variable of PBE divided by phi) squared
+tt = 0.5 * sigma .* dtt_dg;
+
+%        Get xx from aa and tt
+xx = aa .* tt;
+dxx_drs = daa_drs .* tt;
+dxx_dtt = aa;
+
+%        From xx to pade
+pade_den = 1.0./(1.0 + xx .* (1.0 + xx));
+pade = (1.0 + xx) .* pade_den;
+dpade_dxx = -xx .* (2.0 + xx) .* (pade_den.^2);
+dpade_drs = dpade_dxx .* dxx_drs;
+dpade_dtt = dpade_dxx .* dxx_dtt;
+
+%        From pade to qq
+qq = tt .* pade;
+dqq_drs = tt .* dpade_drs;
+dqq_dtt = pade + tt .* dpade_dtt;
+
+%        From qq to rr
+arg_rr = 1.0 + beta * gamma_inv * qq;
+div_rr = 1.0./arg_rr;
+rr = gamma * log(arg_rr);
+drr_dqq = beta * div_rr;
+drr_drs = drr_dqq .* dqq_drs;
+drr_dtt = drr_dqq .* dqq_dtt;
+
+%        The GGA correlation energy is added
+ec = ec + rr;
+
+%        From hh to the derivative of the energy wrt the density
+drhohh_drho = rr - third * rs .* drr_drs - (7.0/3.0) * tt .* drr_dtt; %- zeta * dhh_dzeta 
+v1c = v1c + drhohh_drho;
+
+%        From hh to the derivative of the energy wrt to the gradient of the
+%        density, divided by the gradient of the density
+%        (The v3.3 definition includes the division by the norm of the gradient)
+
+v2c = rho .* dtt_dg .* drr_dtt;
+end
+
+
+function [ex,vx] = slater_spin(rho)
+% slater exchange
+% @param rho  = [rho_tot rho_up rho_dw]
+
+% parameters 
+third = 1./3.;
+threefourth_divpi = 3.0/4.0/pi;
+sixpi2_1_3 = (6.0 * pi^2)^third;
+
+% computationns
+rho_tot = rho(:,1);
+rho_updw = rho(:,2:3);
+rho_updnm1_3 = rho_updw.^(-third);
+rhom1_3 = rho_tot.^(-third);
+rhotot_inv = rhom1_3.^3;
+ex_lsd = -threefourth_divpi * sixpi2_1_3 * (rho_updnm1_3 .* rho_updnm1_3 .* rho_updw);
+
+vx = (4/3) * ex_lsd;
+exc = sum(ex_lsd .* rho_updw,2);
+ex = exc .* rhotot_inv;
+end
+
+
+function [ec,vc] = pw_spin(rho)
+%
+% @param rho  = total electron density
+% @param zeta  = zeta = (rho_up - rho_dw) / rho_tot
+
+% parameters
+third = 1./3.;
+alpha_zeta2 = 1.0 - 1.0e-6; % ABINIT
+alpha_zeta = 1.0 - 1.0e-6; % ABINIT
+% XC.alpha_zeta2 = 1.0; XC.alpha_zeta = 1.0; %LIBXC
+rsfac = 0.6203504908994000;
+sq_rsfac = sqrt(rsfac);
+sq_rsfac_inv = 1.0/sq_rsfac;
+ec0_aa = 0.031091; ec1_aa = 0.015545; mac_aa = 0.016887; % ABINIT
+%ec0_aa = 0.0310907; ec1_aa = 0.01554535; mac_aa = 0.0168869; % LIBXC
+ec0_a1 = 0.21370;  ec1_a1 = 0.20548;  mac_a1 = 0.11125;
+ec0_b1 = 7.5957;  ec1_b1 = 14.1189;  mac_b1 = 10.357;
+ec0_b2 = 3.5876;   ec1_b2 = 6.1977;   mac_b2 = 3.6231;
+ec0_b3 = 1.6382;   ec1_b3 = 3.3662;   mac_b3 = 0.88026;
+ec0_b4 = 0.49294;  ec1_b4 = 0.62517;  mac_b4 = 0.49671;
+factf_zeta = 1.0/(2.0^(4.0/3.0) - 2.0);
+factfp_zeta = 4.0/3.0 * factf_zeta * alpha_zeta2;
+fsec_inv = 1.0/1.709921;
+
+% computation
+rho_tot = rho(:,1);
+rhom1_3 = rho_tot.^(-third);
+rhotot_inv = rhom1_3.^3;
+zeta = (rho(:,2) - rho(:,3)) .* rhotot_inv; % Check whether it is rho_up-rho_dn or rho_dn-rho_up
+zetp = 1 + zeta * alpha_zeta;
+zetm = 1 - zeta * alpha_zeta;
+zetpm1_3 = zetp.^(-third);
+zetmm1_3 = zetm.^(-third);
+
+rhotmo6 = sqrt(rhom1_3);
+rhoto6 = rho_tot .* rhom1_3 .* rhom1_3 .* rhotmo6;
+
+% -----------------------------------------------------------------------------
+% Then takes care of the LSD correlation part of the functional
+rs = rsfac * rhom1_3;
+sqr_rs = sq_rsfac * rhotmo6;
+rsm1_2 = sq_rsfac_inv * rhoto6;
+
+% Formulas A6-A8 of PW92LSD
+ec0_q0 = -2.0 * ec0_aa * (1.0 + ec0_a1 * rs);
+ec0_q1 = 2.0 * ec0_aa *(ec0_b1 * sqr_rs + ec0_b2 * rs + ec0_b3 * rs .* sqr_rs + ec0_b4 * rs .* rs);
+ec0_q1p = ec0_aa * (ec0_b1 * rsm1_2 + 2.0 * ec0_b2 + 3.0 * ec0_b3 * sqr_rs + 4.0 * ec0_b4 * rs);
+ec0_den = 1.0./(ec0_q1 .* ec0_q1 + ec0_q1);
+ec0_log = -log(ec0_q1 .* ec0_q1 .* ec0_den);
+ecrs0 = ec0_q0 .* ec0_log;
+decrs0_drs = -2.0 * ec0_aa * ec0_a1 * ec0_log - ec0_q0 .* ec0_q1p .* ec0_den;
+
+mac_q0 = -2.0 * mac_aa * (1.0 + mac_a1 * rs);
+mac_q1 = 2.0 * mac_aa * (mac_b1 * sqr_rs + mac_b2 * rs + mac_b3 * rs .* sqr_rs + mac_b4 * rs .* rs);
+mac_q1p = mac_aa * (mac_b1 * rsm1_2 + 2 * mac_b2 + 3 * mac_b3 * sqr_rs + 4 * mac_b4 * rs);
+mac_den = 1.0./(mac_q1 .* mac_q1 + mac_q1);
+mac_log = -log( mac_q1 .* mac_q1 .* mac_den );
+macrs = mac_q0 .* mac_log;
+dmacrs_drs = -2.0 * mac_aa * mac_a1 * mac_log - mac_q0 .* mac_q1p .* mac_den;
+
+ec1_q0 = -2.0 * ec1_aa * (1.0 + ec1_a1 * rs);
+ec1_q1 = 2.0 * ec1_aa * (ec1_b1 * sqr_rs + ec1_b2 * rs + ec1_b3 * rs .* sqr_rs + ec1_b4 * rs .* rs);
+ec1_q1p = ec1_aa * (ec1_b1 * rsm1_2 + 2 * ec1_b2 + 3 * ec1_b3 * sqr_rs + 4 * ec1_b4 * rs);
+ec1_den = 1.0./(ec1_q1 .* ec1_q1 + ec1_q1);
+ec1_log = -log( ec1_q1 .* ec1_q1 .* ec1_den );
+ecrs1 = ec1_q0 .* ec1_log;
+decrs1_drs = -2.0 * ec1_aa * ec1_a1 * ec1_log - ec1_q0 .* ec1_q1p .* ec1_den;
+
+% alpha_zeta is introduced in order to remove singularities for fully polarized systems.
+zetp_1_3 = (1.0 + zeta * alpha_zeta) .* (zetpm1_3.^2);
+zetm_1_3 = (1.0 - zeta * alpha_zeta) .* (zetmm1_3.^2);
+
+f_zeta = ( (1.0 + zeta * alpha_zeta2) .* zetp_1_3 + (1.0 - zeta * alpha_zeta2) .* zetm_1_3 - 2.0 ) * factf_zeta;
+fp_zeta = ( zetp_1_3 - zetm_1_3 ) * factfp_zeta;
+zeta4 = zeta.^4;
+
+gcrs = ecrs1 - ecrs0 + macrs * fsec_inv;
+ecrs = ecrs0 + f_zeta .* (zeta4 .* gcrs - macrs * fsec_inv);
+dgcrs_drs = decrs1_drs - decrs0_drs + dmacrs_drs * fsec_inv;
+decrs_drs = decrs0_drs + f_zeta .* (zeta4 .* dgcrs_drs - dmacrs_drs * fsec_inv);
+dfzeta4_dzeta = 4.0 * zeta.^3 .* f_zeta + fp_zeta .* zeta4;
+decrs_dzeta = dfzeta4_dzeta .* gcrs - fp_zeta .* macrs * fsec_inv;
+vxcadd = ecrs - rs * third .* decrs_drs - zeta .* decrs_dzeta;
+
+ec = ecrs;
+vc = zeros(size(rho,1),2);
+vc(:,1) = vxcadd + decrs_dzeta;
+vc(:,2) = vxcadd - decrs_dzeta;
+end
+
+
+function [ex,v1x,v2x] = pbex_spin(rho,sigma,iflag)
+
+
+% parameters
+third = 1./3.;
+mu_ = [0.2195149727645171 10.0/81.0 0.2195149727645171];
+mu = mu_(iflag);
+kappa = 0.804;
+threefourth_divpi = 3.0/4.0/pi;
+sixpi2_1_3 = (6.0 * pi^2)^(1.0/3.0);
+sixpi2m1_3 = 1.0/sixpi2_1_3;
+mu_divkappa = mu/kappa;
+
+% computation
+v2x = zeros(size(rho,1),3);
+rho_tot = rho(:,1);
+rho_updw = rho(:,2:3);
+rho_updnm1_3 = rho_updw.^(-third);
+rhom1_3 = rho_tot.^(-third);
+rhotot_inv = rhom1_3.^3;
+
+% -----------------------------------------------------------------------
+% First take care of the exchange part of the functional
+
+rhomot = rho_updnm1_3;
+ex_lsd = -threefourth_divpi * sixpi2_1_3 * (rhomot .* rhomot .* rho_updw);
+
+rho_inv = rhomot .* rhomot .* rhomot;
+coeffss = (1.0/4.0) * sixpi2m1_3 * sixpi2m1_3 * (rho_inv .* rho_inv .* rhomot .* rhomot);
+ss = sigma(:,2:3) .* coeffss;
+
+if iflag == 1 || iflag == 2
+    divss = 1.0./(1.0 + mu_divkappa * ss);
+    dfxdss = mu * (divss .* divss);
+elseif iflag == 3
+    divss = exp(-mu_divkappa * ss);
+    dfxdss = mu * divss;
+end
+
+fx = 1.0 + kappa * (1.0 - divss);
+ex_gga = ex_lsd .* fx;
+dssdn = (-8.0/3.0) * (ss .* rho_inv);
+dfxdn = dfxdss .* dssdn;
+v1x = ex_lsd .* ((4.0/3.0) * fx + rho_updw .* dfxdn);
+
+dssdg = 2.0 * coeffss;
+dfxdg = dfxdss .* dssdg; 
+v2x(:,2:3) = ex_lsd .* rho_updw .* dfxdg;
+ex = sum(ex_gga .* rho_updw,2).* rhotot_inv;
+end
+
+
+function [ec,v1c,v2c] = pbec_spin(rho,sigma,iflag)
+	
+% parameters
+beta_ = [0.066725 0.046 0.066725];
+beta = beta_(iflag);
+rsfac = 0.6203504908994000; % (0.75/pi)^(1/3)
+sq_rsfac = sqrt(rsfac);
+sq_rsfac_inv = 1.0/sq_rsfac;
+third = 1.0/3.0;
+ec0_aa = 0.031091; ec1_aa = 0.015545; mac_aa = 0.016887; % ABINIT
+%ec0_aa = 0.0310907; ec1_aa = 0.01554535; mac_aa = 0.0168869; % LIBXC
+ec0_a1 = 0.21370;  ec1_a1 = 0.20548;  mac_a1 = 0.11125;
+ec0_b1 = 7.5957;  ec1_b1 = 14.1189;  mac_b1 = 10.357;
+ec0_b2 = 3.5876;   ec1_b2 = 6.1977;   mac_b2 = 3.6231;
+ec0_b3 = 1.6382;   ec1_b3 = 3.3662;   mac_b3 = 0.88026;
+ec0_b4 = 0.49294;  ec1_b4 = 0.62517;  mac_b4 = 0.49671;
+gamma = (1.0 - log(2.0)) /pi^2;
+gamma_inv = 1/gamma;
+coeff_tt = 1.0/(4.0 * 4.0 / pi * (3.0 * pi^2)^third);
+alpha_zeta = 1.0 - 1.0e-6; % ABINIT
+% alpha_zeta = 1.0; %LIBXC
+% alpha_zeta is introduced in order to remove singularities for fully polarized systems.
+factf_zeta = 1.0/(2.0^(4.0/3.0) - 2.0);
+factfp_zeta = 4.0/3.0 * factf_zeta * alpha_zeta;
+fsec_inv = 1.0/1.709921;
+
+% computation
+rho_tot = rho(:,1);
+rhom1_3 = rho_tot.^(-third);
+rhotot_inv = rhom1_3.^3;
+zeta = (rho(:,2) - rho(:,3)) .* rhotot_inv;
+zetp = 1.0 + zeta * alpha_zeta;
+zetm = 1.0 - zeta * alpha_zeta;
+zetpm1_3 = zetp.^(-third);       
+zetmm1_3 = zetm.^(-third);
+
+rhotmo6 = sqrt(rhom1_3);
+rhoto6 = rho_tot .* rhom1_3 .* rhom1_3 .* rhotmo6;
+
+% -----------------------------------------------------------------------------
+% Then takes care of the LSD correlation part of the functional
+
+rs = rsfac * rhom1_3;
+sqr_rs = sq_rsfac * rhotmo6;
+rsm1_2 = sq_rsfac_inv * rhoto6;
+
+%        Formulas A6-A8 of PW92LSD
+ec0_q0 = -2.0 * ec0_aa * (1.0 + ec0_a1 * rs);
+ec0_q1 = 2.0 * ec0_aa *(ec0_b1 * sqr_rs + ec0_b2 * rs + ec0_b3 * rs .* sqr_rs + ec0_b4 * rs .* rs);
+ec0_q1p = ec0_aa * (ec0_b1 * rsm1_2 + 2.0 * ec0_b2 + 3.0 * ec0_b3 * sqr_rs + 4.0 * ec0_b4 * rs);
+ec0_den = 1.0./(ec0_q1 .* ec0_q1 + ec0_q1);
+ec0_log = -log(ec0_q1 .* ec0_q1 .* ec0_den);
+ecrs0 = ec0_q0 .* ec0_log;
+decrs0_drs = -2.0 * ec0_aa * ec0_a1 * ec0_log - ec0_q0 .* ec0_q1p .* ec0_den;
+
+mac_q0 = -2.0 * mac_aa * (1.0 + mac_a1 * rs);
+mac_q1 = 2.0 * mac_aa * (mac_b1 * sqr_rs + mac_b2 * rs + mac_b3 * rs .* sqr_rs + mac_b4 * rs .* rs);
+mac_q1p = mac_aa * (mac_b1 * rsm1_2 + 2 * mac_b2 + 3 * mac_b3 * sqr_rs + 4 * mac_b4 * rs);
+mac_den = 1.0./(mac_q1 .* mac_q1 + mac_q1);
+mac_log = -log( mac_q1 .* mac_q1 .* mac_den );
+macrs = mac_q0 .* mac_log;
+dmacrs_drs = -2.0 * mac_aa * mac_a1 * mac_log - mac_q0 .* mac_q1p .* mac_den;
+
+ec1_q0 = -2.0 * ec1_aa * (1.0 + ec1_a1 * rs);
+ec1_q1 = 2.0 * ec1_aa * (ec1_b1 * sqr_rs + ec1_b2 * rs + ec1_b3 * rs .* sqr_rs + ec1_b4 * rs .* rs);
+ec1_q1p = ec1_aa * (ec1_b1 * rsm1_2 + 2 * ec1_b2 + 3 * ec1_b3 * sqr_rs + 4 * ec1_b4 * rs);
+ec1_den = 1.0./(ec1_q1 .* ec1_q1 + ec1_q1);
+ec1_log = -log( ec1_q1 .* ec1_q1 .* ec1_den );
+ecrs1 = ec1_q0 .* ec1_log;
+decrs1_drs = -2.0 * ec1_aa * ec1_a1 * ec1_log - ec1_q0 .* ec1_q1p .* ec1_den;
+
+zetp_1_3 = (1.0 + zeta * alpha_zeta) .* (zetpm1_3.^2);
+zetm_1_3 = (1.0 - zeta * alpha_zeta) .* (zetmm1_3.^2);
+
+f_zeta = ( (1.0 + zeta * alpha_zeta) .* zetp_1_3 + (1.0 - zeta * alpha_zeta) .* zetm_1_3 - 2.0 ) * factf_zeta;
+fp_zeta = ( zetp_1_3 - zetm_1_3 ) * factfp_zeta;
+zeta4 = zeta.^4;
+
+gcrs = ecrs1 - ecrs0 + macrs * fsec_inv;
+ecrs = ecrs0 + f_zeta .* (zeta4 .* gcrs - macrs * fsec_inv);
+
+dgcrs_drs = decrs1_drs - decrs0_drs + dmacrs_drs * fsec_inv;
+decrs_drs = decrs0_drs + f_zeta .* (zeta4 .* dgcrs_drs - dmacrs_drs * fsec_inv);
+dfzeta4_dzeta = 4.0 * zeta.^3 .* f_zeta + fp_zeta .* zeta4;
+decrs_dzeta = dfzeta4_dzeta .* gcrs - fp_zeta .* macrs * fsec_inv;
+
+% Add LSD correlation functional to GGA exchange functional
+ec = ecrs;
+vxcadd = ecrs - rs * third .* decrs_drs - zeta .* decrs_dzeta;
+v1c(:,1) = vxcadd + decrs_dzeta;
+v1c(:,2) = vxcadd - decrs_dzeta;
+% -----------------------------------------------------------------------------
+% Eventually add the GGA correlation part of the PBE functional
+
+% The definition of phi has been slightly changed, because
+% the original PBE one gives divergent behaviour for fully polarized points
+
+phi_zeta = ( zetpm1_3 .* (1.0 + zeta * alpha_zeta) + zetmm1_3 .* (1.0 - zeta * alpha_zeta)   ) * 0.5;
+phip_zeta = (zetpm1_3 - zetmm1_3) * third * alpha_zeta;
+phi_zeta_inv = 1.0./phi_zeta;
+phi_logder = phip_zeta .* phi_zeta_inv;
+phi3_zeta = phi_zeta .* phi_zeta .* phi_zeta;
+gamphi3inv = gamma_inv * phi_zeta_inv .* phi_zeta_inv .* phi_zeta_inv;
+
+%        From ec to bb
+bb = ecrs .* gamphi3inv;
+dbb_drs = decrs_drs .* gamphi3inv;
+dbb_dzeta = gamphi3inv .* (decrs_dzeta - 3.0 * ecrs .* phi_logder);
+
+% From bb to cc
+exp_pbe = exp(-bb);
+cc = 1.0./(exp_pbe - 1.0);
+dcc_dbb = cc .* cc .* exp_pbe;
+dcc_drs = dcc_dbb .* dbb_drs;
+dcc_dzeta = dcc_dbb .* dbb_dzeta;
+
+% From cc to aa
+coeff_aa = beta * gamma_inv * phi_zeta_inv .* phi_zeta_inv;
+aa = coeff_aa .* cc;
+daa_drs = coeff_aa .* dcc_drs;
+daa_dzeta = -2.0 * aa .* phi_logder + coeff_aa .* dcc_dzeta;
+
+% Introduce tt : do not assume that the spin-dependent gradients are collinear
+grrho2 = sigma(:,1);
+dtt_dg = 2.0 * rhotot_inv .* rhotot_inv .* rhom1_3 * coeff_tt;
+% Note that tt is (the t variable of PBE divided by phi) squared
+tt = 0.5 * grrho2 .* dtt_dg;
+
+% Get xx from aa and tt
+xx = aa .* tt;
+dxx_drs = daa_drs .* tt;
+dxx_dzeta = daa_dzeta .* tt;
+dxx_dtt = aa;
+
+% From xx to pade
+pade_den = 1.0./(1.0 + xx .* (1.0 + xx));
+pade = (1.0 + xx) .* pade_den;
+dpade_dxx = -xx .* (2.0 + xx) .* (pade_den.^2);
+dpade_drs = dpade_dxx .* dxx_drs;
+dpade_dtt = dpade_dxx .* dxx_dtt;
+dpade_dzeta = dpade_dxx .* dxx_dzeta;
+
+% From pade to qq
+coeff_qq = tt .* phi_zeta_inv .* phi_zeta_inv;
+qq = coeff_qq .* pade;
+dqq_drs = coeff_qq .* dpade_drs;
+dqq_dtt = pade .* phi_zeta_inv .* phi_zeta_inv + coeff_qq .* dpade_dtt;
+dqq_dzeta = coeff_qq .* (dpade_dzeta - 2.0 * pade .* phi_logder);
+
+% From qq to rr
+arg_rr = 1.0 + beta * gamma_inv * qq;
+div_rr = 1.0./arg_rr;
+rr = gamma * log(arg_rr);
+drr_dqq = beta * div_rr;
+drr_drs = drr_dqq .* dqq_drs;
+drr_dtt = drr_dqq .* dqq_dtt;
+drr_dzeta = drr_dqq .* dqq_dzeta;
+
+% From rr to hh
+hh = phi3_zeta .* rr;
+dhh_drs = phi3_zeta .* drr_drs;
+dhh_dtt = phi3_zeta .* drr_dtt;
+dhh_dzeta = phi3_zeta .* (drr_dzeta + 3.0 * rr .* phi_logder);
+% The GGA correlation energy is added
+ec = ec + hh;
+
+% From hh to the derivative of the energy wrt the density
+drhohh_drho = hh - third * rs .* dhh_drs - zeta .* dhh_dzeta - (7.0/3.0) * tt .* dhh_dtt;
+v1c(:,1) = v1c(:,1) + drhohh_drho + dhh_dzeta;
+v1c(:,2) = v1c(:,2) + drhohh_drho - dhh_dzeta;
+
+
+% From hh to the derivative of the energy wrt to the gradient of the
+% density, divided by the gradient of the density
+% (The v3.3 definition includes the division by the norm of the gradient)
+
+v2c = zeros(size(rho,1),3);
+v2c(:,1) = rho_tot .* dtt_dg .* dhh_dtt;           
 end
 
 
@@ -1353,4 +1402,3 @@ else
 end
 
 end
-

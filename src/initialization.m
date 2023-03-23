@@ -143,61 +143,77 @@ S.temp_tol = 1e-12;
 % Density tolerance for exchange-correlation
 S.xc_rhotol = 1e-14;
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % exchange correlation
+%   Exchange:     "nox"    none                           iexch=0
+%                 "slater" Slater (alpha=2/3)             iexch=1
+%                 "pbex"   Perdew-Burke-Ernzenhof exch    iexch=2
+%                       options: 1 -- PBE, 2 --PBEsol, 3 -- RPBE
+%   
+%   Correlation:  "noc"    none                           icorr=0
+%                 "pz"     Perdew-Zunger                  icorr=1 
+%                 "pw"     Perdew-Wang                    icorr=2
+%                 "pbec"   Perdew-Burke-Ernzenhof corr    icorr=3
+%                       options: 1 -- PBE, 2 --PBEsol, 3 -- RPBE
+%
+%   Meta-GGA:     "nom"    none                           imeta=0
+%                 "scan"   SCAN-Meta-GGA                  imeta=1
+%
+%   van der Waals "nov"    none                           ivdw=0
+%                 "vdw1"   vdW-DF1                        ivdw=1
+%                 "vdw2"   vdW-DF2                        ivdw=2
+
+
+% decomposition of XC, ixc = [iexch,icorr imeta inlc]
 if strcmp(S.XC, 'LDA_PW')
 	S.xc = 0;
+    S.ixc = [1 2 0 0];
 elseif strcmp(S.XC, 'LDA_PZ')
-	S.xc = 1; % TODO: Implement PZ LDA!
-elseif strcmp(S.XC, 'GGA_PBE') || strcmp(S.XC, 'GGA_RPBE') || strcmp(S.XC, 'GGA_PBEsol')
+	S.xc = 1; 
+    S.ixc = [1 1 0 0];
+elseif strcmp(S.XC, 'GGA_PBE')
 	S.xc = 2;
+    S.ixc = [2 3 0 0];
+    S.xc_option = [1 1];
+elseif strcmp(S.XC, 'GGA_PBEsol')
+    S.ixc = [2 3 0 0];
+    S.xc_option = [2 2];
+elseif strcmp(S.XC, 'GGA_RPBE')
+    S.ixc = [2 3 0 0];
+    S.xc_option = [3 3];
 elseif strcmp(S.XC, 'vdWDF1')
-    if ispc % windows
-		addpath('vdW\vdWDF\');
-	else % max/linux
-		addpath('vdW/vdWDF/');
-    end
     S.xc = -102; % Zhang-Yang revPBE
     S.vdWDFFlag = 1;
 elseif strcmp(S.XC, 'vdWDF2')
-    if ispc % windows
-		addpath('vdW\vdWDF\');
-	else % max/linux
-		addpath('vdW/vdWDF/');
-    end
     S.xc = -108; % rPW86
     S.vdWDFFlag = 2;
 elseif strcmp(S.XC, 'SCAN')
-    if ispc
-        addpath('mgga\');
-    else
-        addpath('mgga/');
-    end
     S.xc = 4;
 elseif strcmp(S.XC, 'HF')
 	S.xc = 40;
     S.usefock = 1;
-    if ispc % windows
-		addpath('exx\');
-	else % max/linux
-		addpath('exx/');
-    end
+    S.ixc = [2 3 0 0];
+    S.xc_option = [1 1];
 elseif strcmp(S.XC, 'PBE0')
 	S.xc = 41;
     S.usefock = 1;
-    if ispc % windows
-		addpath('exx\');
-	else % max/linux
-		addpath('exx/');
-    end
+    S.ixc = [2 3 0 0];
+    S.xc_option = [1 1];
 elseif strcmp(S.XC, 'HSE')
     S.xc = 427;
     S.usefock = 1;
+    S.ixc = [2 3 0 0];
+    S.xc_option = [1 1];
+end
+
+if S.usefock == 1
     if ispc % windows
 		addpath('exx\');
 	else % max/linux
 		addpath('exx/');
     end
 end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 if S.d3Flag == 1 
 	if S.xc ~= 2
