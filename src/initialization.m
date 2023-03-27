@@ -148,7 +148,8 @@ S.xc_rhotol = 1e-14;
 %   Exchange:     "nox"    none                           iexch=0
 %                 "slater" Slater (alpha=2/3)             iexch=1
 %                 "pbex"   Perdew-Burke-Ernzenhof exch    iexch=2
-%                       options: 1 -- PBE, 2 --PBEsol, 3 -- RPBE
+%                       options: 1 -- PBE, 2 --PBEsol, 3 -- RPBE 4 --Zhang-Yang RPBE
+%                 "rPW86x"  Refitted Perdew & Wang 86     iexch=3
 %   
 %   Correlation:  "noc"    none                           icorr=0
 %                 "pz"     Perdew-Zunger                  icorr=1 
@@ -164,7 +165,7 @@ S.xc_rhotol = 1e-14;
 %                 "vdw2"   vdW-DF2                        ivdw=2
 
 
-% decomposition of XC, ixc = [iexch,icorr imeta inlc]
+% decomposition of XC, ixc = [iexch,icorr imeta ivdw]
 if strcmp(S.XC, 'LDA_PW')
 	S.xc = 0;
     S.ixc = [1 2 0 0];
@@ -182,10 +183,23 @@ elseif strcmp(S.XC, 'GGA_RPBE')
     S.ixc = [2 3 0 0];
     S.xc_option = [3 3];
 elseif strcmp(S.XC, 'vdWDF1')
+    if ispc % windows
+		addpath('vdW\vdWDF\');
+	else % max/linux
+		addpath('vdW/vdWDF/');
+    end
     S.xc = -102; % Zhang-Yang revPBE
+	S.ixc = [2 2 0 1]; % 2+4: Zhang-Yang revPBE; 2: LDA_PW86 Correlation; 0: no kinetic energy density; 1: vdW-DF1 non-linear Correlation
+	S.xc_option = [4 0];
     S.vdWDFFlag = 1;
 elseif strcmp(S.XC, 'vdWDF2')
+    if ispc % windows
+		addpath('vdW\vdWDF\');
+	else % max/linux
+		addpath('vdW/vdWDF/');
+    end
     S.xc = -108; % rPW86
+	S.ixc = [3 2 0 2]; % 3: rPW86; 2: LDA_PW86 Correlation; 0: no kinetic energy density; 2: vdW-DF2 non-linear Correlation
     S.vdWDFFlag = 2;
 elseif strcmp(S.XC, 'SCAN')
     S.xc = 4;

@@ -25,7 +25,7 @@ if S.spin_typ == 0
         rho = rho+S.rho_Tilde_at;
     end
     rho(rho < S.xc_rhotol) = S.xc_rhotol;
-    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
         drho_1 = S.grad_1 * rho;
         drho_2 = S.grad_2 * rho;
         drho_3 = S.grad_3 * rho;
@@ -45,6 +45,8 @@ if S.spin_typ == 0
             v2x = zeros(size(rho));
         case 2
             [ex,vx,v2x] = pbex(rho,sigma,S.xc_option(1));
+        case 3
+            [ex,vx,v2x] = rPW86x(rho,sigma);
         otherwise
             ex = zeros(size(rho));
             vx = zeros(size(rho));
@@ -82,7 +84,15 @@ if S.spin_typ == 0
     vxc = vx + vc;
     v2xc = v2x + v2c;
 
-    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(4) ~= 0 % vdWDF1 or vdWDF2
+        S = vdWDF_getQ0onGrid(S, ec, vc); % ec, vc at here is PW linear correlation
+        [S, ps, DpDq0s] = vdWDF_splineInterpolation_energy(S); % compute the vector u for potential and vdW energy
+        [S, vdWpotential] = vdWDF_uGenerate_Potential(S, S.Drho, S.vdWDF_Dq0Drho, S.vdWDF_Dq0Dgradrho, ps, DpDq0s);
+        S.vdWpotential = vdWpotential;
+        vxc = vxc + S.vdWpotential;
+    end
+
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
         if S.cell_typ ~= 2
             vxc = vxc - S.grad_1 * (v2xc.*drho_1) - S.grad_2 * (v2xc.*drho_2) - S.grad_3 * (v2xc.*drho_3);
         else
@@ -118,7 +128,7 @@ elseif S.spin_typ == 1
     end
 	rho(rho < S.xc_rhotol) = S.xc_rhotol;
 	rho(:,1) = rho(:,2) + rho(:,3);
-    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
         drho_1 = S.grad_1 * rho;
 	    drho_2 = S.grad_2 * rho;
 	    drho_3 = S.grad_3 * rho;
@@ -137,6 +147,8 @@ elseif S.spin_typ == 1
             v2x = zeros(size(rho));
         case 2
             [ex,vx,v2x] = pbex_spin(rho,sigma,S.xc_option(1));
+        case 3
+            [ex,vx,v2x] = rPW86x_spin(rho,sigma);
         otherwise
             ex = zeros(size(rho));
             vx = zeros(size(rho));
@@ -173,8 +185,17 @@ elseif S.spin_typ == 1
     exc = ex + ec;
     vxc = vx + vc;
     v2xc = v2x + v2c;
+
+    if S.ixc(4) ~= 0 % vdWDF1 or vdWDF2
+        S = SvdWDF_getQ0onGrid(S, ec, vc); % ec, vc at here is PW linear correlation
+        [S, ps, DpDq0s] = vdWDF_splineInterpolation_energy(S); % the function does not need to modify for spin
+        [S, vdWpotential_up] = vdWDF_uGenerate_Potential(S, S.DrhoUp, S.vdWDF_Dq0Drho(:, 1), S.vdWDF_Dq0Dgradrho(:, 1), ps, DpDq0s);
+        [S, vdWpotential_dn] = vdWDF_uGenerate_Potential(S, S.DrhoDn, S.vdWDF_Dq0Drho(:, 2), S.vdWDF_Dq0Dgradrho(:, 2), ps, DpDq0s);
+        S.vdWpotential = [vdWpotential_up, vdWpotential_dn];
+        vxc = vxc + S.vdWpotential;
+    end
     
-    if S.ixc(1) == 2 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
         if S.cell_typ ~= 2
 		    Vxc_temp = S.grad_1 * (v2xc.*drho_1) + S.grad_2 * (v2xc.*drho_2) + S.grad_3 * (v2xc.*drho_3);
 	    else
@@ -475,12 +496,14 @@ function [ex,v1x,v2x] = pbex(rho,sigma,iflag)
 % iflag=1  J.P.Perdew, K.Burke, M.Ernzerhof, PRL 77, 3865 (1996)
 % iflag=2  PBEsol: J.P.Perdew et al., PRL 100, 136406 (2008)
 % iflag=3  RPBE: B. Hammer, et al., Phys. Rev. B 59, 7413 (1999)
-assert(iflag == 1 || iflag == 2 || iflag == 3);
+% iflag=4  Zhang-Yang Revised PBE: Y. Zhang and W. Yang., Phys. Rev. Lett. 80, 890 (1998)
+assert(iflag == 1 || iflag == 2 || iflag == 3 || iflag == 4);
 
 % parameters 
-mu_ = [0.2195149727645171 10.0/81.0 0.2195149727645171];
+mu_ = [0.2195149727645171 10.0/81.0 0.2195149727645171  0.2195149727645171];
 mu = mu_(iflag);
-kappa = 0.804;
+kappa_ = [0.804 0.804 0.804 1.245];
+kappa = kappa_(iflag);
 threefourth_divpi = 3.0/4.0/pi;
 sixpi2_1_3 = (6.0 * pi^2)^(1.0/3.0);
 sixpi2m1_3 = 1.0/sixpi2_1_3;
@@ -495,7 +518,7 @@ rho_inv = rhomot .* rhomot .* rhomot;
 coeffss = (1.0/4.0) * sixpi2m1_3 * sixpi2m1_3 * (rho_inv .* rho_inv .* rhomot .* rhomot);
 ss = (sigma/4.0) .* coeffss;
 
-if iflag == 1 || iflag == 2
+if iflag == 1 || iflag == 2 || iflag == 4
     divss = 1.0./(1.0 + mu_divkappa * ss);
     dfxdss = mu * (divss .* divss);
 elseif iflag == 3
@@ -512,6 +535,28 @@ dfxdg = dfxdss .* dssdg;
 ex = ex_lsd .* fx;
 v1x = ex_lsd .* ((4.0/3.0) * fx + rho_updn .* dfxdn);
 v2x = 0.5 * ex_lsd .* rho_updn .* dfxdg;
+end
+
+function [ex,v1x,v2x] = rPW86x(rho,sigma)
+a = 1.851;
+b = 17.33;
+c = 0.163;
+s_prefactor = 6.18733545256027; % 2*(3\pi^2)^(1/3)
+Ax = -0.738558766382022; % -3/4 * (3/pi)^(1/3)
+four_thirds = 4.0/3.0;
+
+grad_rho = sigma.^0.5;
+s = grad_rho ./ (s_prefactor*rho.^four_thirds);
+s_2 = s.*s;
+s_3 = s_2.*s;
+s_4 = s_3.*s;
+s_5 = s_3.*s_2;
+s_6 = s_5.*s;
+fs = (1.0 + a*s_2 + b*s_4 + c*s_6).^(1.0/15.0);
+ex = Ax * rho.^(1.0/3.0) .* fs; % \epsilon_x, not n\epsilon_x
+df_ds = (1.0./(15.0*fs.^14.0)) .* (2.0*a*s + 4.0*b*s_3 + 6.0*c*s_5);
+v1x = Ax*four_thirds * (rho.^(1.0/3.0) .*fs - grad_rho./(s_prefactor*rho).*df_ds);
+v2x = Ax * df_ds./(s_prefactor*grad_rho);
 end
 
 
@@ -751,9 +796,10 @@ function [ex,v1x,v2x] = pbex_spin(rho,sigma,iflag)
 
 % parameters
 third = 1./3.;
-mu_ = [0.2195149727645171 10.0/81.0 0.2195149727645171];
+mu_ = [0.2195149727645171 10.0/81.0 0.2195149727645171 0.2195149727645171];
 mu = mu_(iflag);
-kappa = 0.804;
+kappa_ = [0.804 0.804 0.804 1.245];
+kappa = kappa_(iflag);
 threefourth_divpi = 3.0/4.0/pi;
 sixpi2_1_3 = (6.0 * pi^2)^(1.0/3.0);
 sixpi2m1_3 = 1.0/sixpi2_1_3;
@@ -777,7 +823,7 @@ rho_inv = rhomot .* rhomot .* rhomot;
 coeffss = (1.0/4.0) * sixpi2m1_3 * sixpi2m1_3 * (rho_inv .* rho_inv .* rhomot .* rhomot);
 ss = sigma(:,2:3) .* coeffss;
 
-if iflag == 1 || iflag == 2
+if iflag == 1 || iflag == 2 || iflag == 4
     divss = 1.0./(1.0 + mu_divkappa * ss);
     dfxdss = mu * (divss .* divss);
 elseif iflag == 3
@@ -795,6 +841,29 @@ dssdg = 2.0 * coeffss;
 dfxdg = dfxdss .* dssdg; 
 v2x(:,2:3) = ex_lsd .* rho_updw .* dfxdg;
 ex = sum(ex_gga .* rho_updw,2).* rhotot_inv;
+end
+
+function [ex,v1x,v2x] = rPW86x_spin(rho,sigma)
+a = 1.851;
+b = 17.33;
+c = 0.163;
+s_prefactor = 6.18733545256027; % 2*(3\pi^2)^(1/3)
+Ax = -0.738558766382022; % -3/4 * (3/pi)^(1/3)
+four_thirds = 4.0/3.0;
+
+v2x = zeros(size(rho,1),3);
+grad_rho = sigma(:,2:3).^0.5;
+s = grad_rho ./ (2^(1/3) * s_prefactor*rho(:, 2:3).^four_thirds);
+s_2 = s.*s;
+s_3 = s_2.*s;
+s_4 = s_3.*s;
+s_5 = s_3.*s_2;
+s_6 = s_5.*s;
+fs = (1.0 + a*s_2 + b*s_4 + c*s_6).^(1.0/15.0);
+ex = Ax*2^(1/3) * sum(rho(:, 2:3).^(1.0/3.0 + 1) .* fs, 2) ./ rho(:, 1); % \epsilon_x, not n\epsilon_x
+df_ds = (1.0./(15.0*fs.^14.0)) .* (2.0*a*s + 4.0*b*s_3 + 6.0*c*s_5);
+v1x = Ax*four_thirds * (2^(1/3)*rho(:, 2:3).^(1.0/3.0) .*fs - grad_rho./(s_prefactor*rho(:, 2:3)).*df_ds);
+v2x(:, 2:3) = Ax * df_ds./(s_prefactor*grad_rho);
 end
 
 
