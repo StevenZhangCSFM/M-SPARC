@@ -25,7 +25,7 @@ if S.spin_typ == 0
         rho = rho+S.rho_Tilde_at;
     end
     rho(rho < S.xc_rhotol) = S.xc_rhotol;
-    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(1) == 4 || S.ixc(2) == 3 || S.ixc(2) == 4 % xc involves gradient of rho
         drho_1 = S.grad_1 * rho;
         drho_2 = S.grad_2 * rho;
         drho_3 = S.grad_3 * rho;
@@ -38,6 +38,14 @@ if S.spin_typ == 0
         sigma(sigma < S.xc_rhotol) = S.xc_rhotol;
     end
 
+    if S.ixc(1) == 4 || S.ixc(2) == 4 % SCAN metaGGA
+        if S.countPotential == -1 % compute potential before SCF by GGA_PBE, there is no psi yet
+            S.ixc = [2 3 0 0];
+        else % compute kinetic energy density tau
+            S.tau = kineticDensity(S); % it is \tau=-1/2\nabla^2\phi = 1/2(\nabla\phi)\cdot(\nabla\phi)
+        end
+    end
+
     % iexch 
     switch S.ixc(1)
         case 1
@@ -47,6 +55,8 @@ if S.spin_typ == 0
             [ex,vx,v2x] = pbex(rho,sigma,S.xc_option(1));
         case 3
             [ex,vx,v2x] = rPW86x(rho,sigma);
+        case 4
+            [ex,vx,v2x,v3x] = scanx(rho,sigma,tau); % TODO: 1. input sigma, not normDrho; 2. output v2x/v2c needs to divide by normDrho
         otherwise
             ex = zeros(size(rho));
             vx = zeros(size(rho));
@@ -62,6 +72,8 @@ if S.spin_typ == 0
             v2c = zeros(size(rho));
         case 3
             [ec,vc,v2c] = pbec(rho,sigma,S.xc_option(2));
+        case 4
+            [ec,vc,v2c,v3c] = scanc(rho,sigma,tau); % TODO: 1. input sigma, not normDrho; 2. output v2x/v2c needs to divide by normDrho
         otherwise
             ec = zeros(size(rho));
             vc = zeros(size(rho));
@@ -84,7 +96,7 @@ if S.spin_typ == 0
     vxc = vx + vc;
     v2xc = v2x + v2c;
 
-    if S.ixc(4) ~= 0 % vdWDF1 or vdWDF2
+    if S.ixc(4) ~= 0 % vdWDF1 or vdWDF2, nonlocal correlation potential
         S = vdWDF_getQ0onGrid(S, ec, vc); % ec, vc at here is PW linear correlation
         [S, ps, DpDq0s] = vdWDF_splineInterpolation_energy(S); % compute the vector u for potential and vdW energy
         [S, vdWpotential] = vdWDF_uGenerate_Potential(S, S.Drho, S.vdWDF_Dq0Drho, S.vdWDF_Dq0Dgradrho, ps, DpDq0s);
@@ -92,7 +104,16 @@ if S.spin_typ == 0
         vxc = vxc + S.vdWpotential;
     end
 
-    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 4 || S.ixc(2) == 4 % SCAN metaGGA
+        if S.countPotential == -1 % compute potential before SCF by GGA_PBE, there is no psi yet
+            S.ixc = [4 4 0 0]; % restore the labels
+        else
+            S.VxcScan3 = v3x + v3c;
+        end
+        S.countPotential = S.countPotential + 1;
+    end
+
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(1) == 4 || S.ixc(2) == 3 || S.ixc(2) == 4 % xc involves gradient of rho
         if S.cell_typ ~= 2
             vxc = vxc - S.grad_1 * (v2xc.*drho_1) - S.grad_2 * (v2xc.*drho_2) - S.grad_3 * (v2xc.*drho_3);
         else
@@ -105,6 +126,8 @@ if S.spin_typ == 0
     S.e_xc = exc;
     S.Vxc = vxc;
     S.dvxcdgrho = v2xc;
+
+    
 	
 % 	if (S.xc == -102) || (S.xc == -108)
 % 		S = vdW_DF(S, XC);
@@ -128,7 +151,7 @@ elseif S.spin_typ == 1
     end
 	rho(rho < S.xc_rhotol) = S.xc_rhotol;
 	rho(:,1) = rho(:,2) + rho(:,3);
-    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(1) == 4 || S.ixc(2) == 3 || S.ixc(2) == 4 % xc involves gradient of rho
         drho_1 = S.grad_1 * rho;
 	    drho_2 = S.grad_2 * rho;
 	    drho_3 = S.grad_3 * rho;
@@ -140,6 +163,14 @@ elseif S.spin_typ == 1
 	    end
     end
 
+    if S.ixc(1) == 4 || S.ixc(2) == 4 % SCAN metaGGA
+        if S.countPotential == -1 % compute potential before SCF by GSGA_PBE, there is no psi yet
+            S.ixc = [2 3 0 0];
+        else % compute kinetic energy density tau
+            S.tau = kineticDensity_spin(S); % it is \tau=-1/2\nabla^2\phi = 1/2(\nabla\phi)\cdot(\nabla\phi)
+        end
+    end
+
     % iexch 
     switch S.ixc(1)
         case 1
@@ -149,6 +180,8 @@ elseif S.spin_typ == 1
             [ex,vx,v2x] = pbex_spin(rho,sigma,S.xc_option(1));
         case 3
             [ex,vx,v2x] = rPW86x_spin(rho,sigma);
+        case 4
+            [ex,vx,v2x,v3x] = scanx_spin(rho,sigma,tau); % TODO: 1. input sigma, not normDrho; 2. output v2x has 3 columns 3. v2x / |grad rho|
         otherwise
             ex = zeros(size(rho));
             vx = zeros(size(rho));
@@ -164,6 +197,8 @@ elseif S.spin_typ == 1
             v2c = zeros(size(rho));
         case 3
             [ec,vc,v2c] = pbec_spin(rho,sigma,S.xc_option(2));
+        case 4
+            [ec,vc,v2c,v3c] = scanc_spin(rho,sigma,tau); % TODO: 1. input sigma, not normDrho; 2. output v2x has 3 columns 3. v2c / |grad rho|
         otherwise
             ec = zeros(size(rho));
             vc = zeros(size(rho));
@@ -186,7 +221,7 @@ elseif S.spin_typ == 1
     vxc = vx + vc;
     v2xc = v2x + v2c;
 
-    if S.ixc(4) ~= 0 % vdWDF1 or vdWDF2
+    if S.ixc(4) ~= 0 % vdWDF1 or vdWDF2, nonlocal correlation potential
         S = SvdWDF_getQ0onGrid(S, ec, vc); % ec, vc at here is PW linear correlation
         [S, ps, DpDq0s] = vdWDF_splineInterpolation_energy(S); % the function does not need to modify for spin
         [S, vdWpotential_up] = vdWDF_uGenerate_Potential(S, S.DrhoUp, S.vdWDF_Dq0Drho(:, 1), S.vdWDF_Dq0Dgradrho(:, 1), ps, DpDq0s);
@@ -194,8 +229,18 @@ elseif S.spin_typ == 1
         S.vdWpotential = [vdWpotential_up, vdWpotential_dn];
         vxc = vxc + S.vdWpotential;
     end
+
+    if S.ixc(1) == 4 || S.ixc(2) == 4 % SCAN metaGGA
+        if S.countPotential == -1 % compute potential before SCF by GGA_PBE, there is no psi yet
+            S.ixc = [4 4 0 0]; % restore the labels
+        else
+            S.VxcScan3 = v3x + v3c;
+        end
+        S.countPotential = S.countPotential + 1;
+    end
     
-    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(2) == 3 % xc involves gradient of rho
+    if S.ixc(1) == 2 || S.ixc(1) == 3 || S.ixc(1) == 4 || S.ixc(2) == 3 || S.ixc(2) == 4 % xc involves gradient of rho
+        % col 1 for correlation potential (up similar to down), col 2 for up exchange potential, col 3 for down exchange potential
         if S.cell_typ ~= 2
 		    Vxc_temp = S.grad_1 * (v2xc.*drho_1) + S.grad_2 * (v2xc.*drho_2) + S.grad_3 * (v2xc.*drho_3);
 	    else
@@ -258,6 +303,74 @@ function [S] = SvdW_DF(S, XC)
     [S, vdWpotential_dn] = vdWDF_uGenerate_Potential(S, S.DrhoDn, S.vdWDF_Dq0Drho(:, 2), S.vdWDF_Dq0Dgradrho(:, 2), ps, DpDq0s);
     S.vdWpotential = [vdWpotential_up, vdWpotential_dn];
     S.Vxc = S.Vxc + S.vdWpotential;
+end
+
+%--------------------------------------------------------------------------
+
+function [tau] = kineticDensity(S)
+    tau = zeros(size(rho,1), size(rho,2)); % <psi|-0.5\nabla^2|psi> = 0.5*<\nabla*psi|\nabla*psi>
+    % there is no orbital in 1st SCF
+    for kpt =1:S.tnkpt
+        kpt_vec = S.kptgrid(kpt,:);
+        psiTheKpt = reshape(S.psi(:,:,kpt), S.N, S.Nev);
+
+        dpsiTheKpt_1 = blochGradient(S,kpt_vec,1) * psiTheKpt; % modified. To compute the gradient of psi of different k-points
+        dpsiTheKpt_2 = blochGradient(S,kpt_vec,2) * psiTheKpt;
+        dpsiTheKpt_3 = blochGradient(S,kpt_vec,3) * psiTheKpt;
+        if S.cell_typ == 2 % unorthogonal cell
+            lapc_T = [S.lapc_T(1,1), S.lapc_T(2,1), S.lapc_T(3,1);
+            S.lapc_T(2,1), S.lapc_T(2,2), S.lapc_T(3,2);
+            S.lapc_T(3,1), S.lapc_T(3,2), S.lapc_T(3,3)];
+        
+            dpsiTheKpt_theWaveFun = [dpsiTheKpt_1(:), dpsiTheKpt_2(:), dpsiTheKpt_3(:)];
+            dpsiTheKptMLapT_theWaveFun = dpsiTheKpt_theWaveFun*lapc_T;
+            dpsiTheKptMLapT_1 = reshape(dpsiTheKptMLapT_theWaveFun(:, 1), S.N, S.Nev);
+            dpsiTheKptMLapT_2 = reshape(dpsiTheKptMLapT_theWaveFun(:, 2), S.N, S.Nev);
+            dpsiTheKptMLapT_3 = reshape(dpsiTheKptMLapT_theWaveFun(:, 3), S.N, S.Nev);
+            tau = tau + 0.5 * 2*S.wkpt(kpt)*(conj(dpsiTheKpt_1) .* dpsiTheKptMLapT_1)*S.occ(:,kpt);
+            tau = tau + 0.5 * 2*S.wkpt(kpt)*(conj(dpsiTheKpt_2) .* dpsiTheKptMLapT_2)*S.occ(:,kpt);
+            tau = tau + 0.5 * 2*S.wkpt(kpt)*(conj(dpsiTheKpt_3) .* dpsiTheKptMLapT_3)*S.occ(:,kpt);
+        else % orthogonal cell
+            tau = tau + 0.5 * 2*S.wkpt(kpt)*(conj(dpsiTheKpt_1) .* (dpsiTheKpt_1))*S.occ(:,kpt); % multiply occupation, then sum over NSTATES
+            tau = tau + 0.5 * 2*S.wkpt(kpt)*(conj(dpsiTheKpt_2) .* (dpsiTheKpt_2))*S.occ(:,kpt);
+            tau = tau + 0.5 * 2*S.wkpt(kpt)*(conj(dpsiTheKpt_3) .* (dpsiTheKpt_3))*S.occ(:,kpt);
+        end
+    end
+    tau = real(tau);
+end
+
+function [tau] = kineticDensity_spin(S)
+    tau = zeros(size(rho,1), size(rho,2)); % <psi|-0.5\nabla^2|psi> = 0.5*<\nabla*psi|\nabla*psi>
+    ks = 1;
+    for spin = 1:S.nspin
+        for kpt = 1:S.tnkpt
+            kpt_vec = S.kptgrid(kpt,:);
+            psiTheKpt = reshape(S.psi(:,:,ks), S.N, S.Nev);
+            dpsiTheKpt_1 = blochGradient(S,kpt_vec,1) * psiTheKpt; % modified. To compute the gradient of psi of different k-points
+            dpsiTheKpt_2 = blochGradient(S,kpt_vec,2) * psiTheKpt;
+            dpsiTheKpt_3 = blochGradient(S,kpt_vec,3) * psiTheKpt;
+            if S.cell_typ == 2
+                lapc_T = [S.lapc_T(1,1), S.lapc_T(2,1), S.lapc_T(3,1);
+                        S.lapc_T(2,1), S.lapc_T(2,2), S.lapc_T(3,2);
+                        S.lapc_T(3,1), S.lapc_T(3,2), S.lapc_T(3,3)];
+                dpsiTheKpt_theWaveFun = [dpsiTheKpt_1(:), dpsiTheKpt_2(:), dpsiTheKpt_3(:)];
+                dpsiTheKptMLapT_theWaveFun = dpsiTheKpt_theWaveFun*lapc_T;
+                dpsiTheKptMLapT_1 = reshape(dpsiTheKptMLapT_theWaveFun(:, 1), S.N, S.Nev);
+                dpsiTheKptMLapT_2 = reshape(dpsiTheKptMLapT_theWaveFun(:, 2), S.N, S.Nev);
+                dpsiTheKptMLapT_3 = reshape(dpsiTheKptMLapT_theWaveFun(:, 3), S.N, S.Nev);
+                tau(:, spin+1) = tau(:, spin+1) + 0.5 * S.wkpt(kpt)*(conj(dpsiTheKpt_1) .* dpsiTheKptMLapT_1)*S.occ(:,ks);
+                tau(:, spin+1) = tau(:, spin+1) + 0.5 * S.wkpt(kpt)*(conj(dpsiTheKpt_2) .* dpsiTheKptMLapT_2)*S.occ(:,ks);
+                tau(:, spin+1) = tau(:, spin+1) + 0.5 * S.wkpt(kpt)*(conj(dpsiTheKpt_3) .* dpsiTheKptMLapT_3)*S.occ(:,ks);
+            else
+                tau(:, spin+1) = tau(:, spin+1) + 0.5 * S.wkpt(kpt)*(conj(dpsiTheKpt_1) .* dpsiTheKpt_1)*S.occ(:,ks);
+                tau(:, spin+1) = tau(:, spin+1) + 0.5 * S.wkpt(kpt)*(conj(dpsiTheKpt_2) .* dpsiTheKpt_2)*S.occ(:,ks);
+                tau(:, spin+1) = tau(:, spin+1) + 0.5 * S.wkpt(kpt)*(conj(dpsiTheKpt_3) .* dpsiTheKpt_3)*S.occ(:,ks);
+            end
+            ks = ks + 1;
+        end
+    end
+    tau(:, 1) = tau(:, 2) + tau(:, 3);
+    tau = real(tau);
 end
 
 %--------------------------------------------------------------------------
@@ -558,7 +671,6 @@ df_ds = (1.0./(15.0*fs.^14.0)) .* (2.0*a*s + 4.0*b*s_3 + 6.0*c*s_5);
 v1x = Ax*four_thirds * (rho.^(1.0/3.0) .*fs - grad_rho./(s_prefactor*rho).*df_ds);
 v2x = Ax * df_ds./(s_prefactor*grad_rho);
 end
-
 
 function [ec,v1c,v2c] = pbec(rho,sigma,iflag)
 % PBE correlation 

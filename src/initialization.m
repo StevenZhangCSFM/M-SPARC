@@ -150,12 +150,14 @@ S.xc_rhotol = 1e-14;
 %                 "pbex"   Perdew-Burke-Ernzenhof exch    iexch=2
 %                       options: 1 -- PBE, 2 --PBEsol, 3 -- RPBE 4 --Zhang-Yang RPBE
 %                 "rPW86x"  Refitted Perdew & Wang 86     iexch=3
+%                 "scanx"  SCAN exchange                  iexch=4
 %   
 %   Correlation:  "noc"    none                           icorr=0
 %                 "pz"     Perdew-Zunger                  icorr=1 
 %                 "pw"     Perdew-Wang                    icorr=2
 %                 "pbec"   Perdew-Burke-Ernzenhof corr    icorr=3
 %                       options: 1 -- PBE, 2 --PBEsol, 3 -- RPBE
+%                 "scanc"  SCAN correlation               icorr=4
 %
 %   Meta-GGA:     "nom"    none                           imeta=0
 %                 "scan"   SCAN-Meta-GGA                  imeta=1
@@ -203,6 +205,7 @@ elseif strcmp(S.XC, 'vdWDF2')
     S.vdWDFFlag = 2;
 elseif strcmp(S.XC, 'SCAN')
     S.xc = 4;
+	S.ixc = [4 4 0 0];
 elseif strcmp(S.XC, 'HF')
 	S.xc = 40;
     S.usefock = 1;
