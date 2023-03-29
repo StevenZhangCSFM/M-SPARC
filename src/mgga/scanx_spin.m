@@ -15,6 +15,7 @@ function [ex,vx,v2x,v3x] = scanx_spin(rho,sigma,tau)
  % ex has only 1 column: epsilon_x = [\epsilon_x(2n_up)*2n_up + \epsilon_x(2n_dn)*2n_dn] / 2 / (n_up + n_dn)
  % vx has 2 cols: [D(\epsilon_x(2n_up)*2n_up)/D(2n_up), D(\epsilon_x(2n_dn)*2n_dn)/D(2n_dn)]
  % v2x has 3 cols: [0, D(\epsilon_x(2n_up)*2n_up)/D(|grad 2n_up|) / |grad 2n_up|*2, D(\epsilon_x(2n_dn)*2n_dn)/D(|grad 2n_dn|) / |grad 2n_dn|*2]
+ %                =[0, D(\epsilon_x(2n_up)*n_up)/D(|grad n_up|) / |grad n_up|, D(\epsilon_x(2n_dn)*n_dn)/D(|grad n_dn|) / |grad n_dn|]
  % v3x has 2 cols: [D(\epsilon_x(2n_up)*2n_up)/D(2tau_up), D(\epsilon_x(2n_dn)*2n_dn)/D(2tau_dn)]
     v2x = zeros(size(rho,1),3);
     normDrho = sigma.^0.5; 
