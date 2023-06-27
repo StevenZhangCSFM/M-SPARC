@@ -92,25 +92,30 @@ if S.parallel ~= 1
 			lambda_cutoff(ks) = max(S.EigVal(:,ks)) + 0.10; 
 		end
 		
-		% fprintf('filter cutoff = %f, lower bound = %f, upper bound = %f\n',lambda_cutoff(ks),a0(ks),bup(ks));
-		% Chebyshev filtering
-		psi(:,:,ks) = chebyshev_filter(psi(:,:,ks),S.npl,lambda_cutoff(ks),bup(ks),a0(ks),DL11,DL22,DL33,DG1,DG2,DG3,Heff,S,kpt_vec,spin);
-		psi(:,:,ks) = orth(psi(:,:,ks));
-		Nev1 = size(psi(:,:,ks),2);    % WARNING: ORTH(psi) might change the size of psi, that's why we update Nev
-		assert(Nev1 == S.Nev,'Number of states have changed within SCF');
+% 		% fprintf('filter cutoff = %f, lower bound = %f, upper bound = %f\n',lambda_cutoff(ks),a0(ks),bup(ks));
+% 		% Chebyshev filtering
+% 		psi(:,:,ks) = chebyshev_filter(psi(:,:,ks),S.npl,lambda_cutoff(ks),bup(ks),a0(ks),DL11,DL22,DL33,DG1,DG2,DG3,Heff,S,kpt_vec,spin);
+% 		psi(:,:,ks) = orth(psi(:,:,ks));
+% 		Nev1 = size(psi(:,:,ks),2);    % WARNING: ORTH(psi) might change the size of psi, that's why we update Nev
+% 		assert(Nev1 == S.Nev,'Number of states have changed within SCF');
+% 
+% 		% Subspace Hamiltonian
+% 		Hs = psi(:,:,ks)' * h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Heff,psi(:,:,ks),S,kpt_vec,spin);
+% 
+% 		% Solve subspace eigenproblem,
+% 		if S.cell_typ < 3
+% 			Hs = 0.5 * (Hs + Hs');
+% 		end
+% 		[Q, Q1] = eig(Hs);
+% 		EigVal(:,ks) = real(diag(Q1)); % WARNING: Taking real part only!
+% 
+% 		% subspace rotation
+% 		psi(:,:,ks) = psi(:,:,ks) * Q;
 
-		% Subspace Hamiltonian
-		Hs = psi(:,:,ks)' * h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Heff,psi(:,:,ks),S,kpt_vec,spin);
-
-		% Solve subspace eigenproblem,
-		if S.cell_typ < 3
-			Hs = 0.5 * (Hs + Hs');
-		end
-		[Q, Q1] = eig(Hs);
-		EigVal(:,ks) = real(diag(Q1)); % WARNING: Taking real part only!
-
-		% subspace rotation
-		psi(:,:,ks) = psi(:,:,ks) * Q;
+    % replace chebyshev filtering by eigs to get all eigenpairs of Hamiltonian
+        [Q, Q1] = eigs(Hfun, S.N*S.nspinor, S.N*S.nspinor);
+        EigVal(:,ks) = real(diag(Q1)); % WARNING: Taking real part only!
+        psi(:,:,ks) = Q;
 
 		% Normalize psi, s.t. integral(psi_new' * psi_new) = 1
 		scfac = 1 ./ sqrt(sum(repmat(S.W,S.nspinor,S.Nev) .* (psi(:,:,ks) .* conj(psi(:,:,ks))),1));
