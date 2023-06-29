@@ -7,7 +7,7 @@ else % max/linux
     addpath('../src/');
 end
 %% step 1: extract wave functions, their eigenvalues ane occupations from S, 
-Neig = 100; % the number of eigenvalues of chi0 to be computed by PDEP
+Neig = 500; % the number of eigenvalues of chi0 to be computed by PDEP
 % S.psi;S.occ;S.EigVal; 
 psi = S.psi;
 % psi = S.psi ./ vecnorm(S.psi); % unify wave functions
@@ -39,10 +39,9 @@ opts = struct('maxit', 100, 'tol', S.TOL_LANCZOS, 'v0', rand(S.N*S.nspinor,1));
 kpt_vec = S.kptgrid(kpt,:);
 [DL11,DL22,DL33,DG1,DG2,DG3] = blochLaplacian_1d(S,kpt_vec);
 % Hfun = @(x) h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Heff,x,S,kpt_vec,spin);
-%% Large for loop over i\omega, at first only set a value
-% and generate \chi0(iw) by definition. w1=0; w2=1.6 (to be removed in the real code)
 gammas = ones(Ns, 1);
-omegaNumber = 4;
+%% Large for loop over i\omega, at first only set a value
+omegaNumber = 1;
 [omega_mesh, mesh01, weights] = imaginary_omega_mesh(omegaNumber);
 eigenValues = zeros(Neig, omegaNumber);
 for omegaIndex = 1:omegaNumber
@@ -57,13 +56,18 @@ for omegaIndex = 1:omegaNumber
         S, kpt_vec, spin, Qws, Pws, trialDeltaV, occPsis, occEigs, Nd, Ns, omega);
     trialDeltaRho = composeRho(occPsis, deltaPsis);
     chi0DeltaV_error = trialDeltaRho/weight - chi0*trialDeltaV;
+%     % brutally find the matrix nu_chi0, and compute its eigenpairs (to be removed)
+    Hfun = @(x) nuChiMultiplyDeltaV(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
+        S, spin, kpt, occPsis, weight, occEigs, Nd, Ns, gammas, omega, x);
+%     eyeNd = eye(Nd);
+%     nu_chi0 = Hfun(eyeNd);
+%     [nuChiPsis_direct, nuChiEigs_direct] = eig(nu_chi0);
+%     sorted_nuChiEigs_direct = sort(diag(nuChiEigs_direct));
 %% step 3: define the function \nu\chi0(iw)\delta V, \delta V = [v1, v2, ...]
     % compose linear operator P and Q
     % Sternheimer equation solver to get \delta\psi for every occupied orbital, iterative linear solver (call gmres)
     % compose \delta\rho
     % solve laplacian*\delta\phi = \delta\rho, (AAR solver)
-    Hfun = @(x) nuChiMultiplyDeltaV(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
-        S, spin, kpt, occPsis, weight, occEigs, Nd, Ns, gammas, omega, x);
     trial_nuChi_DeltaV = nuChiMultiplyDeltaV(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
         S, spin, kpt, occPsis, weight, occEigs, Nd, Ns, gammas, omega, trialDeltaV);
     verifyDeltaRho = -1/(4*pi)*(lapVec(DL11,DL22,DL33,DG1,DG2,DG3,trial_nuChi_DeltaV,S));
