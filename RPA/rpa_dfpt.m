@@ -1,30 +1,31 @@
 %% Currently, the script cannot handle k-points and spin-polarization
 %% The script cannot calculate metal, fractional occupations
-load("testcase/S.mat");
+load("testcase/S_gga_6state.mat");
 if ispc % windows
     addpath('..\src\');
 else % max/linux
     addpath('../src/');
 end
 %% step 1: extract wave functions, their eigenvalues ane occupations from S, 
-Neig = 500; % the number of eigenvalues of chi0 to be computed by PDEP
+Neig = 400; % the number of eigenvalues of chi0 to be computed by PDEP
 % S.psi;S.occ;S.EigVal; 
 psi = S.psi;
 % psi = S.psi ./ vecnorm(S.psi); % unify wave functions
 occ = S.occ;
 EigVal = S.EigVal;
 Nd = S.N;
-for i = Nd:-1:1
+Nev = S.Nev;
+for i = 1:Nev
     if occ(i) < 1e-5
         occPos = i;
         break
     end
 end
-occPsis = psi(:, occPos + 1:Nd);
-occEigs = EigVal(occPos + 1:Nd);
-unoccPsis = psi(:, 1:occPos);
-unoccEigs = EigVal(1:occPos);
-Ns = Nd - occPos;
+occPsis = psi(:, 1:occPos - 1);
+occEigs = EigVal(1:occPos - 1);
+unoccPsis = psi(:, occPos:Nev);
+unoccEigs = EigVal(occPos:Nev);
+Ns = occPos - 1;
 weight = S.W(1); % <psi*|psi>=1
 %% step 2: extract potential vector and laplacian operators from S
 % use function h_nonlocal_vector_mult(DL11,DL22,DL33,DG1,DG2,DG3,Veff,X,S,kptvec,spin) directly
@@ -46,16 +47,16 @@ omegaNumber = 1;
 eigenValues = zeros(Neig, omegaNumber);
 for omegaIndex = 1:omegaNumber
     omega = omega_mesh(omegaIndex);
-    % define the function \chi0(iw)*\delta V (to be removed)
-    chi0 = composeChiNew(occPsis, occEigs, unoccPsis, unoccEigs, Nd, Ns, omega);
-    % confirm the correctness of the function by using \chi0 generated before (to be removed)
-    trialDeltaV = rand(Nd, 1);
-    trialDeltaV = trialDeltaV / norm(trialDeltaV);
-    [Qws, Pws] = composeLinearOperator(occPsis, weight, occEigs, Nd, Ns, gammas, omega);
-    deltaPsis = sternheimerSolver(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
-        S, kpt_vec, spin, Qws, Pws, trialDeltaV, occPsis, occEigs, Nd, Ns, omega);
-    trialDeltaRho = composeRho(occPsis, deltaPsis);
-    chi0DeltaV_error = trialDeltaRho/weight - chi0*trialDeltaV;
+%     % define the function \chi0(iw)*\delta V (to be removed)
+%     chi0 = composeChiNew(occPsis, occEigs, unoccPsis, unoccEigs, Nd, Ns, omega);
+%     % confirm the correctness of the function by using \chi0 generated before (to be removed)
+%     trialDeltaV = rand(Nd, 1);
+%     trialDeltaV = trialDeltaV / norm(trialDeltaV);
+%     [Qws, Pws] = composeLinearOperator(occPsis, weight, occEigs, Nd, Ns, gammas, omega);
+%     deltaPsis = sternheimerSolver(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
+%         S, kpt_vec, spin, Qws, Pws, trialDeltaV, occPsis, occEigs, Nd, Ns, omega);
+%     trialDeltaRho = composeRho(occPsis, deltaPsis);
+%     chi0DeltaV_error = trialDeltaRho/weight - chi0*trialDeltaV;
 %     % brutally find the matrix nu_chi0, and compute its eigenpairs (to be removed)
     Hfun = @(x) nuChiMultiplyDeltaV(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
         S, spin, kpt, occPsis, weight, occEigs, Nd, Ns, gammas, omega, x);
@@ -64,14 +65,14 @@ for omegaIndex = 1:omegaNumber
 %     [nuChiPsis_direct, nuChiEigs_direct] = eig(nu_chi0);
 %     sorted_nuChiEigs_direct = sort(diag(nuChiEigs_direct));
 %% step 3: define the function \nu\chi0(iw)\delta V, \delta V = [v1, v2, ...]
-    % compose linear operator P and Q
-    % Sternheimer equation solver to get \delta\psi for every occupied orbital, iterative linear solver (call gmres)
-    % compose \delta\rho
-    % solve laplacian*\delta\phi = \delta\rho, (AAR solver)
-    trial_nuChi_DeltaV = nuChiMultiplyDeltaV(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
-        S, spin, kpt, occPsis, weight, occEigs, Nd, Ns, gammas, omega, trialDeltaV);
-    verifyDeltaRho = -1/(4*pi)*(lapVec(DL11,DL22,DL33,DG1,DG2,DG3,trial_nuChi_DeltaV,S));
-    laplaSolver_residual = trialDeltaRho - verifyDeltaRho;
+%     % compose linear operator P and Q
+%     % Sternheimer equation solver to get \delta\psi for every occupied orbital, iterative linear solver (call gmres)
+%     % compose \delta\rho
+%     % solve laplacian*\delta\phi = \delta\rho, (AAR solver)
+%     trial_nuChi_DeltaV = nuChiMultiplyDeltaV(DL11, DL22, DL33, DG1, DG2, DG3, Heff, ...
+%         S, spin, kpt, occPsis, weight, occEigs, Nd, Ns, gammas, omega, trialDeltaV);
+%     verifyDeltaRho = -1/(4*pi)*(lapVec(DL11,DL22,DL33,DG1,DG2,DG3,trial_nuChi_DeltaV,S));
+%     laplaSolver_residual = trialDeltaRho - verifyDeltaRho;
 %% step 4: solve eigenvalues and eigenvectors of \nu\chi0
     % define chebyshev degree and time of loop
     Ncheb = 3;
